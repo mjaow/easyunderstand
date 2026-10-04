@@ -1,6 +1,7 @@
 <!doctype html>
 <html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Understand video · EasyUnderstand</title><link rel="stylesheet" href="sidepanel.css"></head>
 <body>
+<template id="panel-template">
 <header><div class="brand"><span class="mark">e</span> EasyUnderstand <span id="panel-tag" class="tag">VIDEO</span></div><h1 id="panel-heading">Understand video</h1><p id="video-title">Open a YouTube video to get started.</p></header>
 <main>
   <div class="toolbar"><button id="understand" class="primary" disabled hidden>Understand video</button><button id="plan-watch" class="primary" disabled hidden title="Plan what to focus on or skip from the title, description, and captions.">Plan watch</button><button id="cancel" hidden>Cancel</button><button id="clear-cache" title="Delete all locally saved video summaries, translations, and watch plans and clear this panel.">Clear cache</button></div>
@@ -46,5 +47,5 @@
   </div>
   <details id="transcript-section" hidden><summary>Inspect the source transcript</summary><p class="meta">Captions can contain recognition errors. Visual content is not analyzed.</p><div id="transcript"></div></details>
   <footer><span id="panel-note"></span> <a href="help.html" target="_blank" rel="noreferrer">Setup &amp; help</a></footer>
-</main><script type="module" src="sidepanel.js"></script>
+</main></template><script type="module" src="sidepanel.js"></script>
 </body></html>

@@ -1,10 +1,11 @@
 import type { VideoEvent } from '../src/shared/video.js'
 
-const get = <T extends HTMLElement = HTMLElement>(id: string): T => document.getElementById(id) as T
 const duration = (ms: number, precision = 2): string => `${(Math.max(0, ms) / 1000).toFixed(precision)} s`
 
 /** One click-to-result clock, independent of provider progress or later actions. */
 export class SummaryTiming {
+  constructor(private readonly root: ParentNode = document) {}
+  private get = <T extends HTMLElement = HTMLElement>(id: string): T => this.root.querySelector<T>(`#${id}`)!
   private started = 0
   private openingMs = 0
   private transcriptStarted: number | null = null
@@ -16,6 +17,7 @@ export class SummaryTiming {
   private ticker: ReturnType<typeof setInterval> | null = null
 
   start(clickedAt?: number): void {
+    const get = this.get
     this.reset()
     this.started = performance.now()
     // Content script and panel have different time origins. Carry the original
@@ -37,15 +39,17 @@ export class SummaryTiming {
     this.ticker = setInterval(() => this.tick(), 100)
   }
 
-  model(name: string): void { get('timing-model').textContent = name }
+  model(name: string): void { this.get('timing-model').textContent = name }
 
   loadingTranscript(): void {
+    const get = this.get
     this.transcriptStarted = performance.now()
     get('timing-connection').textContent = 'Alongside captions'
     this.tick()
   }
 
   loadedTranscript(): void {
+    const get = this.get
     if (this.transcriptStarted !== null) this.transcriptMs = performance.now() - this.transcriptStarted
     this.transcriptStarted = null
     this.transcriptDone = true
@@ -54,6 +58,7 @@ export class SummaryTiming {
   }
 
   requestingModel(): void {
+    const get = this.get
     this.requestStarted = performance.now()
     // Captions and the helper connect in parallel. Charge only preparation and
     // connection waiting not already counted as transcript loading.
@@ -63,12 +68,14 @@ export class SummaryTiming {
   }
 
   receivedResult(): void {
+    const get = this.get
     this.displayStarted = performance.now()
     if (this.requestStarted !== null) this.requestMs = this.displayStarted - this.requestStarted
     get('timing-display').textContent = 'In progress'
   }
 
   finish(event: VideoEvent): void {
+    const get = this.get
     if (this.ticker === null) return
     const now = performance.now()
     const total = this.openingMs + now - this.started
@@ -91,6 +98,7 @@ export class SummaryTiming {
   }
 
   stop(outcome: 'Cancelled' | 'Failed'): void {
+    const get = this.get
     if (this.ticker === null) return
     this.tick()
     this.clearTicker()
@@ -105,6 +113,7 @@ export class SummaryTiming {
   }
 
   reset(): void {
+    const get = this.get
     this.clearTicker()
     this.transcriptStarted = null
     this.transcriptMs = 0
@@ -119,6 +128,7 @@ export class SummaryTiming {
 
   private elapsed(): number { return this.openingMs + performance.now() - this.started }
   private tick(): void {
+    const get = this.get
     get('timing-total').textContent = duration(this.elapsed())
     if (this.transcriptDone && this.requestStarted === null) get('timing-connection').textContent = duration(performance.now() - this.started - this.transcriptMs, 3)
     if (this.transcriptStarted !== null) get('timing-transcript').textContent = duration(performance.now() - this.transcriptStarted)
