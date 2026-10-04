@@ -1,28 +1,27 @@
-export type VideoAction = 'analyze' | 'watch-plan'
-export interface PanelTarget { tabId: number; windowId: number; videoId: string | null; title: string; start: boolean; token: string; clickedAt?: number; action?: VideoAction }
+import { videoIdFromUrl, type PanelTarget, type VideoAction } from './panel-target.js'
+export type { PanelTarget, VideoAction } from './panel-target.js'
 export type UnderstandResponse = { ok: true } | { ok: false; error: string }
 function targetFor(tab: chrome.tabs.Tab, start: boolean, clickedAt?: number, action: VideoAction = 'analyze'): PanelTarget {
-  let videoId: string | null = null
-  try { const u = new URL(tab.url ?? ''); if (u.origin === 'https://www.youtube.com' && u.pathname === '/watch') videoId = u.searchParams.get('v') } catch { /* non-web tab */ }
-  return { tabId: tab.id!, windowId: tab.windowId, videoId, title: tab.title ?? '', start, token: crypto.randomUUID(), clickedAt, action }
+  return { tabId: tab.id!, windowId: tab.windowId, videoId: videoIdFromUrl(tab.url), title: tab.title ?? '', start, token: crypto.randomUUID(), clickedAt, action }
 }
 const updates = new Map<number, Promise<void>>()
-function publishTarget(next: PanelTarget, ready: Promise<void> = Promise.resolve()): Promise<void> {
+function publishTarget(next: PanelTarget, ready: Promise<void> = Promise.resolve(), active = true): Promise<void> {
   const key = `target:${next.windowId}`
+  const tabKey = `tab-target:${next.tabId}`
   // Serialize writes, including across a cold service-worker start. A title or
   // timestamp update must not erase a click while the panel is still loading.
   const update = Promise.allSettled([updates.get(next.windowId), ready]).then(async ([, availability]) => {
     if (availability.status === 'rejected') throw availability.reason
     if (!next.start) {
-      const stored = await chrome.storage.session.get(key)
-      const previous = stored[key] as PanelTarget | undefined
+      const stored = await chrome.storage.session.get([key, tabKey])
+      const previous = (stored[tabKey] ?? stored[key]) as PanelTarget | undefined
       if (previous?.tabId === next.tabId && previous.videoId === next.videoId) {
-        next = { ...previous, title: next.title }
+        next = { ...previous, windowId: next.windowId, title: next.title }
       } else if (previous?.action) {
         next = { ...next, action: previous.action }
       }
     }
-    await chrome.storage.session.set({ [key]: next })
+    await chrome.storage.session.set({ [tabKey]: next, ...(active ? { [key]: next } : {}) })
   })
   updates.set(next.windowId, update)
   const cleanup = (): void => { if (updates.get(next.windowId) === update) updates.delete(next.windowId) }
@@ -55,7 +54,12 @@ chrome.tabs.onActivated.addListener(info => {
 })
 chrome.tabs.onUpdated.addListener((_id, change, tab) => {
   // YouTube often updates the watch URL before the tab title during navigation.
-  if (tab.active && (change.url !== undefined || change.title !== undefined)) {
-    void publishTarget(targetFor(tab, false)).catch(e => console.error('Could not update EasyUnderstand:', e))
+  if (change.url !== undefined || change.title !== undefined || change.status === 'complete') {
+    void publishTarget(targetFor(tab, false), undefined, tab.active).catch(e => console.error('Could not update EasyUnderstand:', e))
   }
+})
+chrome.tabs.onRemoved.addListener((tabId, info) => {
+  // Let any earlier metadata write finish before deleting this tab's receipt.
+  void Promise.allSettled([updates.get(info.windowId)]).then(() => chrome.storage.session.remove(`tab-target:${tabId}`))
+    .catch(e => console.error('Could not clear EasyUnderstand tab:', e))
 })

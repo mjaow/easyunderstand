@@ -3,6 +3,7 @@ import type { PanelTarget, UnderstandResponse } from '../extension/background.js
 
 let updated: Parameters<typeof chrome.tabs.onUpdated.addListener>[0]
 let activated: Parameters<typeof chrome.tabs.onActivated.addListener>[0]
+let removed: Parameters<typeof chrome.tabs.onRemoved.addListener>[0]
 let message: Parameters<typeof chrome.runtime.onMessage.addListener>[0]
 const save = vi.fn(), read = vi.fn(), openPanel = vi.fn(), getTab = vi.fn()
 let stored: Record<string, PanelTarget>
@@ -12,7 +13,7 @@ beforeEach(async () => {
   vi.resetModules()
   stored = {}
   save.mockReset().mockImplementation(async values => { Object.assign(stored, values) })
-  read.mockReset().mockImplementation(async key => ({ [key]: stored[key] }))
+  read.mockReset().mockImplementation(async () => ({ ...stored }))
   openPanel.mockReset().mockResolvedValue(undefined)
   getTab.mockReset().mockResolvedValue(tab)
   vi.stubGlobal('chrome', {
@@ -20,8 +21,9 @@ beforeEach(async () => {
     action: { onClicked: { addListener: vi.fn() } },
     sidePanel: { open: openPanel },
     tabs: { get: getTab, onActivated: { addListener: (listener: typeof activated) => { activated = listener } },
+      onRemoved: { addListener: (listener: typeof removed) => { removed = listener } },
       onUpdated: { addListener: (listener: typeof updated) => { updated = listener } } },
-    storage: { session: { set: save, get: read } }
+    storage: { session: { set: save, get: read, remove: async (key: string) => { delete stored[key] } } }
   })
   await import('../extension/background.js')
 })
@@ -34,6 +36,46 @@ function click(sender: chrome.runtime.MessageSender = { tab, url: tab.url }) {
 }
 
 describe('video panel target updates', () => {
+  it('restores each tab request after switching away, including after a service-worker restart', async () => {
+    message({ action: 'watch-plan' }, { tab, url: tab.url }, vi.fn())
+    await vi.waitFor(() => expect(save).toHaveBeenCalledTimes(1))
+    const original = stored['target:1']
+    getTab.mockResolvedValueOnce({ ...tab, id: 3, url: 'https://www.youtube.com/' })
+    activated({ tabId: 3, windowId: 1 })
+    await vi.waitFor(() => expect(save).toHaveBeenCalledTimes(2))
+    expect(stored['target:1']).toMatchObject({ tabId: 3, start: false })
+    vi.resetModules()
+    await import('../extension/background.js')
+    activated({ tabId: 2, windowId: 1 })
+    await vi.waitFor(() => expect(save).toHaveBeenCalledTimes(3))
+    expect(stored['target:1']).toEqual(original)
+    expect(openPanel).toHaveBeenCalledTimes(1)
+  })
+
+  it('invalidates an inactive tab request on navigation without changing the active window target', async () => {
+    click()
+    await vi.waitFor(() => expect(save).toHaveBeenCalledTimes(1))
+    getTab.mockResolvedValueOnce({ ...tab, id: 3 })
+    activated({ tabId: 3, windowId: 1 })
+    await vi.waitFor(() => expect(save).toHaveBeenCalledTimes(2))
+    const active = stored['target:1']
+    updated(2, { url: 'https://www.youtube.com/' }, { ...tab, active: false, url: 'https://www.youtube.com/' })
+    updated(2, { url: tab.url }, { ...tab, active: false })
+    await vi.waitFor(() => expect(save).toHaveBeenCalledTimes(4))
+    expect(stored['target:1']).toEqual(active)
+    activated({ tabId: 2, windowId: 1 })
+    await vi.waitFor(() => expect(save).toHaveBeenCalledTimes(5))
+    expect(stored['target:1']).toMatchObject({ tabId: 2, videoId: 'jNQXAC9IVRw', start: false })
+    expect(stored['target:1'].clickedAt).toBeUndefined()
+  })
+
+  it('removes a closed tab receipt after its pending metadata update finishes', async () => {
+    click()
+    removed(2, { windowId: 1, isWindowClosing: false })
+    await vi.waitFor(() => expect(save).toHaveBeenCalledTimes(1))
+    await vi.waitFor(() => expect(stored['tab-target:2']).toBeUndefined())
+  })
+
   it('preserves a separate watch-plan request through delayed metadata updates', async () => {
     const respond = vi.fn()
     message({ action: 'watch-plan', clickedAt: 1234 }, { tab, url: tab.url }, respond)
@@ -45,16 +87,25 @@ describe('video panel target updates', () => {
   it('publishes a title-only update after YouTube changes the URL before its title', async () => {
     updated(tab.id!, { url: tab.url }, tab)
     await vi.waitFor(() => expect(save).toHaveBeenCalledTimes(1))
-    expect(save).toHaveBeenLastCalledWith({ 'target:1': expect.objectContaining({ videoId: 'jNQXAC9IVRw', title: tab.title, start: false }) })
+    expect(stored['target:1']).toMatchObject({ videoId: 'jNQXAC9IVRw', title: tab.title, start: false })
     updated(tab.id!, { title: 'New lecture - YouTube' }, { ...tab, title: 'New lecture - YouTube' })
     await vi.waitFor(() => expect(save).toHaveBeenCalledTimes(2))
-    expect(save).toHaveBeenLastCalledWith({ 'target:1': expect.objectContaining({ videoId: 'jNQXAC9IVRw', title: 'New lecture - YouTube', start: false }) })
+    expect(stored['target:1']).toMatchObject({ videoId: 'jNQXAC9IVRw', title: 'New lecture - YouTube', start: false })
   })
-  it('does not replace the active target for an inactive tab or an unrelated update', () => {
+  it('does not replace the active target for an inactive tab or an unrelated update', async () => {
     updated(tab.id!, { title: 'Inactive video' }, { ...tab, active: false })
-    updated(tab.id!, { status: 'complete' }, tab)
-    expect(save).not.toHaveBeenCalled()
-    expect(read).not.toHaveBeenCalled()
+    updated(tab.id!, { status: 'loading' }, tab)
+    await vi.waitFor(() => expect(save).toHaveBeenCalledTimes(1))
+    expect(stored['target:1']).toBeUndefined()
+    expect(stored['tab-target:2']).toMatchObject({ start: false })
+  })
+
+  it('clears a saved request when navigation completes outside the YouTube URL permission', async () => {
+    click()
+    await vi.waitFor(() => expect(save).toHaveBeenCalledTimes(1))
+    updated(2, { status: 'complete' }, { ...tab, active: false, url: undefined, title: undefined })
+    await vi.waitFor(() => expect(save).toHaveBeenCalledTimes(2))
+    expect(stored['tab-target:2']).toMatchObject({ videoId: null, start: false })
   })
 
   it('keeps the click and its timing when a title update arrives before the panel opens', async () => {

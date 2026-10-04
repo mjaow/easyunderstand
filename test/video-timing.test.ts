@@ -8,6 +8,7 @@ let timing: SummaryTiming
 const read = (id: string): string => document.getElementById(`timing-${id}`)!.textContent!
 beforeEach(() => {
   document.body.innerHTML = readFileSync('extension/sidepanel.html', 'utf8')
+  document.body.append((document.getElementById('panel-template') as HTMLTemplateElement).content.cloneNode(true))
   now = 0
   vi.spyOn(performance, 'now').mockImplementation(() => now)
   timing = new SummaryTiming()

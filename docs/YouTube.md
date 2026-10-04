@@ -143,6 +143,10 @@ or time-budget inputs. **Understand video** continues to generate summaries only
 Each view shows only the controls and result for the action you chose. Use the
 buttons below the video to switch views and start that action immediately.
 **Plan again** and **Summarize again** request fresh results in their respective views.
+Switching tabs or windows preserves each tab's view, expanded sections, and scroll
+position. A pending plan or summary can finish while you are on another tab.
+Opening a different video in that tab clears its previous view, including when
+the navigation happens in the background. Closing a tab releases its view.
 If the browser recreates the panel, it loads the requested result again, using the
 saved result when available. An earlier startup cannot leave the new panel idle.
 

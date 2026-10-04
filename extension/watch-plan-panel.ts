@@ -1,7 +1,6 @@
 import { clockTime, type VideoTranscript, type VideoWatchPlan } from '../src/shared/video.js'
 import { nextFocusRange, watchEstimate, watchRanges, WATCH_LABELS, type WatchRange } from '../src/shared/watch-plan.js'
 
-const get = <T extends HTMLElement = HTMLElement>(id: string): T => document.getElementById(id) as T
 interface Hooks {
   generation: () => number
   isBusy: () => boolean
@@ -17,13 +16,17 @@ export class WatchPlanPanel {
   private tabId = 0
   private plan: VideoWatchPlan | null = null
   private ranges: WatchRange[] = []
-  constructor(private readonly hooks: Hooks) {
+  private get = <T extends HTMLElement = HTMLElement>(id: string): T => this.root.querySelector<T>(`#${id}`)!
+
+  constructor(private readonly hooks: Hooks, private readonly root: ParentNode = document) {
+    const get = this.get
     get('next-focus').addEventListener('click', () => void this.nextFocus())
   }
 
   get hasPlan(): boolean { return this.plan !== null }
 
   reset(): void {
+    const get = this.get
     this.transcript = null; this.plan = null; this.ranges = []
     get('watch-plan-section').hidden = true
     get('watch-result').hidden = true
@@ -32,16 +35,19 @@ export class WatchPlanPanel {
   }
 
   setBusy(busy: boolean): void {
+    const get = this.get
     get<HTMLButtonElement>('next-focus').disabled = busy || !this.plan
   }
 
   show(plan: VideoWatchPlan, transcript: VideoTranscript, tabId: number): void {
+    const get = this.get
     this.plan = plan; this.transcript = transcript; this.tabId = tabId
     this.render()
     get('watch-plan-section').hidden = false
   }
 
   private render(): void {
+    const get = this.get
     if (!this.plan || !this.transcript) return
     const plan = this.plan
     this.ranges = watchRanges(plan, this.transcript)
@@ -96,6 +102,7 @@ export class WatchPlanPanel {
   }
 
   private async nextFocus(): Promise<void> {
+    const get = this.get
     const transcript = this.transcript, revision = this.hooks.generation()
     if (!transcript || !this.plan || this.hooks.isBusy()) return
     try {
