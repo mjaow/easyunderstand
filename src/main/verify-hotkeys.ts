@@ -89,6 +89,24 @@ export function runHotkeyVerification(): void {
   check(globalShortcut.isRegistered(FREE_A), 'the binding is live with the OS')
   unregisterHotkeys()
 
+  const pair = registerHotkeys([
+    { id: 'explain', accelerator: FREE_A, handler: noop, description: 'Explain' },
+    { id: 'refine', accelerator: FREE_B, handler: noop, description: 'Refine' }
+  ])
+  check(pair.resolved.explain === FREE_A && pair.resolved.refine === FREE_B,
+    'explanation and refinement have independent live shortcuts')
+  check(globalShortcut.isRegistered(FREE_A) && globalShortcut.isRegistered(FREE_B),
+    'both actions are registered with the OS')
+  unregisterHotkeys()
+
+  const duplicate = registerHotkeys([
+    { id: 'explain', accelerator: FREE_A, handler: noop, description: 'Explain' },
+    { id: 'refine', accelerator: FREE_A, handler: noop, description: 'Refine' }
+  ])
+  check(duplicate.resolved.explain === FREE_A && !!duplicate.resolved.refine && duplicate.resolved.refine !== FREE_A,
+    'a duplicate refinement shortcut falls back without taking the explanation shortcut')
+  unregisterHotkeys()
+
   // --- an unbindable shortcut falls back rather than failing ---------------
   //
   // A shortcut owned by *another process* can't be simulated from here:

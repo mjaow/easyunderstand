@@ -31,6 +31,10 @@ const api = {
     ipcRenderer.send(IPC.popupExplainCode)
   },
 
+  refineAgain(): void {
+    ipcRenderer.send(IPC.popupRefineAgain)
+  },
+
   /** Put text the user selected in the popup on the clipboard. */
   copySelection(text: string): Promise<{ ok: boolean; error?: string }> {
     return ipcRenderer.invoke(IPC.popupCopySelection, text)

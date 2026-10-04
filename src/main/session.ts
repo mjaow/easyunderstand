@@ -1,7 +1,7 @@
 /**
  * Orchestrates one lookup: capture → explain → stream into the popup.
  */
-import { app, BrowserWindow, clipboard } from 'electron'
+import { app, BrowserWindow, clipboard, net } from 'electron'
 import { appendFile, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { CaptureFailure, ExplainRequest, ExplainState } from '../shared/types.js'
@@ -11,6 +11,8 @@ import { readTranscriptAtPoint } from './a11y.js'
 import { IS_MACOS, copyChordLabel, foregroundWindowTitle, inputPermission } from './native/index.js'
 import { showPopup, updatePopup, hidePopup, isPopupVisible } from './popup.js'
 import { detectMode, SectionParser, systemPrompt } from '../core/explain.js'
+import { RefinementParser } from '../core/refine.js'
+import { streamRefinement } from '../core/refine-generation.js'
 import {
   PRONUNCIATION_CACHE_VERSION,
   withDictionaryPronunciations,
@@ -67,21 +69,38 @@ let inFlight: AbortController | null = null
 let capturingSelection = false
 /** What the popup is showing, so "explain this code" can ask again about it. */
 let lastRequest: ExplainRequest | null = null
+let lastRefinement: ExplainState | null = null
+let refineAttempt = 0
+type SelectionAction = 'explain' | 'refine'
+let popupAction: SelectionAction = 'explain'
 
-function cancelInFlight(): void {
+/** Also called when Escape or the close button hides the popup. */
+export function cancelInFlight(): void {
   inFlight?.abort()
   inFlight = null
 }
 
 function emit(state: ExplainState, isNew: boolean): void {
+  popupAction = state.mode === 'refine' ? 'refine' : 'explain'
   if (isNew) showPopup(state)
   else updatePopup(state)
 }
 
 /** Hotkey handler: read the selection and explain it. */
 export async function explainSelection(): Promise<void> {
+  await processSelection('explain')
+}
+
+/** Uses the same copy capture for editable textboxes and read-only selections. */
+export async function refineSelection(): Promise<void> {
+  await processSelection('refine')
+}
+
+async function processSelection(action: SelectionAction): Promise<void> {
   if (capturingSelection) return
   cancelInFlight()
+  lastRequest = null
+  lastRefinement = null
 
   capturingSelection = true
   let result
@@ -91,17 +110,17 @@ export async function explainSelection(): Promise<void> {
     capturingSelection = false
   }
   if (!result.ok) {
-    showPopup({
-      mode: 'passage',
+    emit({
+      mode: action === 'refine' ? 'refine' : 'passage',
       text: '',
       explanation: {},
       status: 'error',
       error: permissionNote() + CAPTURE_MESSAGES[result.reason]
-    })
+    }, true)
     return
   }
 
-  const mode = detectMode(result.text)
+  const mode = action === 'refine' ? 'refine' : detectMode(result.text)
   await run({ mode, text: result.text, raw: result.raw }, true)
 }
 
@@ -178,14 +197,26 @@ export async function explainClickedTranscript(click: { x: number; y: number }):
  * model flagged the selection as code in it, and this is the user taking the offer.
  */
 export async function explainLastAsCode(): Promise<void> {
-  if (!lastRequest) return
+  if (!lastRequest || lastRequest.mode === 'refine') return
   cancelInFlight()
   await run({ mode: 'code', text: lastRequest.text, raw: lastRequest.raw }, false)
 }
 
-async function run(req: ExplainRequest, isNew: boolean): Promise<void> {
+/** Reuse the original selection; clicking the popup must never capture it again. */
+export async function refineAgain(): Promise<void> {
+  if (!lastRequest || lastRequest.mode !== 'refine' || capturingSelection || inFlight || !isPopupVisible()) return
+  await run({
+    mode: 'refine', text: lastRequest.text, raw: lastRequest.raw,
+    previousRefinement: lastRefinement?.explanation.refined
+  }, false, true)
+}
+
+async function run(req: ExplainRequest, isNew: boolean, fresh = false): Promise<void> {
   req = withPronunciationHints(req)
   lastRequest = req
+  const previous = fresh ? lastRefinement : null
+  if (isNew || req.mode !== 'refine') lastRefinement = null
+  const attempt = req.mode === 'refine' ? ++refineAttempt : undefined
   const config = loadConfig()
   const { explanations } = caches()
   // Code may go to a stronger model; everything else stays on the everyday one.
@@ -194,25 +225,28 @@ async function run(req: ExplainRequest, isNew: boolean): Promise<void> {
   // The prompt is part of the key: a cached answer is only as good as the prompt that
   // produced it, and an improved prompt must not keep serving the old answer.
   const key = cacheKey(
-    config.llm.provider, model, req.mode, systemPrompt(req.mode), req.text, req.context,
-    req.mode === 'code' ? undefined : PRONUNCIATION_CACHE_VERSION
+    config.llm.provider, model, req.mode, systemPrompt(req.mode),
+    req.mode === 'refine' ? req.raw ?? req.text : req.text, req.context,
+    req.mode === 'code' || req.mode === 'refine' ? undefined : PRONUNCIATION_CACHE_VERSION
   )
 
-  const cached = explanations.get(key)
+  // An explicit retry always calls the model; its completed result becomes the
+  // selection's latest cached version for the next ordinary hotkey lookup.
+  const cached = fresh ? undefined : explanations.get(key)
   if (cached) {
-    emit(
-      {
-        mode: req.mode,
-        text: req.text,
-        raw: req.raw,
-        context: req.context,
-        explanation: withDictionaryPronunciations(req, cached),
-        status: 'done',
-        model,
-        cached: true
-      },
-      isNew
-    )
+    const state: ExplainState = {
+      mode: req.mode,
+      text: req.text,
+      raw: req.raw,
+      context: req.context,
+      explanation: withDictionaryPronunciations(req, cached),
+      status: 'done',
+      model,
+      cached: true,
+      refineAttempt: attempt
+    }
+    if (req.mode === 'refine') lastRefinement = state
+    emit(state, isNew)
     return
   }
 
@@ -223,32 +257,61 @@ async function run(req: ExplainRequest, isNew: boolean): Promise<void> {
     context: req.context,
     explanation: {},
     status: 'streaming',
-    model
+    model,
+    refineAttempt: attempt
   }
   emit(state, isNew)
 
+  const fail = (message: string): void => {
+    emit(previous
+      ? { ...previous, refineAttempt: attempt, refineRetryError: message }
+      : { ...state, status: 'error', error: message }, false)
+  }
+
   let provider
   try {
-    provider = createLlmProvider(config, getSecret(config.llm.provider), model)
+    // Chromium's connection pool avoids the long network stalls measured with
+    // Node fetch on this desktop. The endpoint, key, model and prompt stay intact.
+    provider = createLlmProvider(config, getSecret(config.llm.provider), model,
+      config.llm.provider === 'azure' ? (input, init) => net.fetch(input instanceof URL ? input.href : input, init) : undefined)
   } catch (err) {
     const e = describeError(config.llm.provider, err)
-    emit({ ...state, status: 'error', error: [e.message, e.hint].filter(Boolean).join(' ') }, false)
+    fail([e.message, e.hint].filter(Boolean).join(' '))
     return
   }
 
   const controller = new AbortController()
   inFlight = controller
-  const parser = new SectionParser()
+  let parser = req.mode === 'refine' ? new RefinementParser() : new SectionParser()
 
   try {
-    for await (const chunk of provider.explain(req, controller.signal)) {
+    const response = req.mode === 'refine'
+      ? streamRefinement(provider, req, controller.signal, () => {
+        parser = new RefinementParser()
+        state.explanation = {}
+        state.refineAttempt = ++refineAttempt
+        state.refineProgress = 'Connection is slow. Retrying…'
+        updatePopup(state)
+      })
+      : provider.explain(req, controller.signal)
+    for await (const chunk of response) {
       if (controller.signal.aborted) return
+      state.refineProgress = undefined
       state.explanation = withDictionaryPronunciations(req, parser.push(chunk), false)
       updatePopup(state)
     }
+    if (controller.signal.aborted) return
     const parsed = parser.end()
+    if (req.mode === 'refine' && !parsed.refined) {
+      throw new Error('The model returned no refined text. Try again.')
+    }
+    if (req.previousRefinement && parsed.refined?.replace(/\s+/g, ' ').trim() === req.previousRefinement.replace(/\s+/g, ' ').trim()) {
+      throw new Error('The model returned the same wording. Please try again.')
+    }
     state.explanation = withDictionaryPronunciations(req, parsed)
     state.status = 'done'
+    state.refineProgress = undefined
+    if (req.mode === 'refine') lastRefinement = state
 
     // Only cache a result that actually parsed — caching an empty or malformed
     // answer would make a transient failure permanent.
@@ -256,6 +319,12 @@ async function run(req: ExplainRequest, isNew: boolean): Promise<void> {
     updatePopup(state)
   } catch (err) {
     if (controller.signal.aborted) return
+
+    if (previous) {
+      const e = describeError(config.llm.provider, err)
+      fail([e.message, e.hint].filter(Boolean).join(' '))
+      return
+    }
 
     // Running out of output tokens is not like the other failures: everything that
     // streamed before it is a real, readable answer. Replacing it with an error
@@ -292,8 +361,8 @@ const MAX_COPY_CHARS = 20_000
  *
  * This is the one place the app writes the clipboard and leaves it written. The
  * capture path borrows it and always puts the original back; selecting text in the
- * popup is the user asking for the opposite, and it is the only way text can leave a
- * window that never takes focus — their own ⌘C would reach whatever app does have it.
+ * popup or clicking Copy refined text explicitly asks to replace it. Their own ⌘C
+ * would reach whatever app has focus.
  */
 export async function copySelection(text: string): Promise<{ ok: boolean; error?: string }> {
   const trimmed = text.trim()
@@ -345,14 +414,22 @@ export async function synthesize(
   }
 }
 
-/** Pressing the hotkey while the popup is open dismisses it. */
+/** Repeating the same action dismisses it; the other hotkey starts a new capture. */
 export function toggleOrExplain(): void {
-  if (isPopupVisible()) {
+  toggleSelection('explain')
+}
+
+export function toggleOrRefine(): void {
+  toggleSelection('refine')
+}
+
+function toggleSelection(action: SelectionAction): void {
+  if (isPopupVisible() && popupAction === action) {
     cancelInFlight()
     hidePopup()
     return
   }
-  void explainSelection()
+  void processSelection(action)
 }
 
 export function flushCaches(): void {

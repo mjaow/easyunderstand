@@ -22,7 +22,7 @@ beforeEach(async () => {
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
   const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}/v1`
   config = {
-    hotkeys: { explain: '' }, doubleClickTranscripts: false, launchAtLogin: false,
+    hotkeys: { explain: '', refine: '' }, doubleClickTranscripts: false, launchAtLogin: false,
     tts: { provider: 'system', systemVoice: '', azureRegion: '', azureVoice: '', slowRate: -40, autoPlay: false },
     llm: { provider: 'openai', models: { openai: 'everyday-model' }, baseUrls: { openai: 'https://daily.example.invalid/v1' }, codeModel: '',
       videoProvider: 'openai', videoModel: 'gemini-3.8-flash', videoBaseUrl: base, videoKeyScope: `openai|${base}` }

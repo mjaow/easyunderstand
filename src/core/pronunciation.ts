@@ -37,7 +37,7 @@ export function lookupPronunciations(term: string): readonly string[] {
 
 /** Give the explanation model a bounded choice, not a request to invent IPA. */
 export function withPronunciationHints(req: ExplainRequest): ExplainRequest {
-  if (req.mode === 'code') return req
+  if (req.mode === 'code' || req.mode === 'refine') return req
   const hints: Record<string, readonly PronunciationCandidate[]> = Object.create(null)
   const terms = req.mode === 'word'
     ? [req.text]

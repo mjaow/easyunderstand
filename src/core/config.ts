@@ -19,11 +19,12 @@ export const DEFAULT_CONFIG: AppConfig = {
     //
     // Ctrl+Alt+Space and Ctrl+Alt+R look like the obvious picks but are commonly
     // taken: the first by Chinese/Japanese IMEs, the second by screen recorders and
-    // conferencing apps. E (explain) and S (speak) are both free far more often, and
-    // registerHotkeys() falls back automatically if they aren't.
+    // conferencing apps. R is still memorable for refinement; registerHotkeys()
+    // gives each action a separate fallback if its preferred key is unavailable.
     // CommandOrControl rather than Control: one stored shortcut is then correct on
     // Windows (Ctrl) and macOS (Cmd) alike, instead of being tied to where it was set.
-    explain: 'CommandOrControl+Alt+E'
+    explain: 'CommandOrControl+Alt+E',
+    refine: 'CommandOrControl+Alt+R'
   },
   doubleClickTranscripts: true,
   llm: {

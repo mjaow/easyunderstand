@@ -16,7 +16,7 @@
  */
 import { app, globalShortcut } from 'electron'
 import { loadConfig } from '../core/config.js'
-import { isForbidden } from './hotkeys.js'
+import { FALLBACKS, isForbidden } from './hotkeys.js'
 
 /**
  * Candidates worth considering, roughly in order of how comfortable they are to hit
@@ -103,11 +103,11 @@ function probe(accelerator: string): Probe {
 
 export function runHotkeyProbe(): void {
   const config = loadConfig()
-  const configured = new Set([config.hotkeys.explain])
+  const configured = new Set(Object.values(config.hotkeys))
 
   console.log('\nEasyUnderstand — hotkey availability\n')
 
-  const results = CANDIDATES.map(probe)
+  const results = [...new Set([...configured, ...FALLBACKS.explain, ...FALLBACKS.refine, ...CANDIDATES])].map(probe)
   const pad = Math.max(...results.map((r) => r.accelerator.length))
 
   for (const r of results) {
@@ -128,11 +128,11 @@ export function runHotkeyProbe(): void {
   console.log(`\n  ${free.length} of ${results.length} candidates are free.`)
 
   if (takenConfigured.length > 0) {
-    console.log('\n  Your configured hotkey is NOT available:')
+    console.log('\n  Some configured hotkeys are NOT available:')
     for (const r of takenConfigured) console.log(`    ${r.accelerator} — ${r.status}`)
     console.log(`\n  Suggested replacements: ${free.slice(0, 2).join('  and  ') || '(none free)'}`)
   } else {
-    console.log('  Your configured hotkey is available.')
+    console.log('  Your configured hotkeys are available.')
   }
   console.log('')
 

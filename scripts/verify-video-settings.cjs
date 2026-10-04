@@ -10,7 +10,7 @@ const azure = process.argv.includes('--azure')
 const legacy = process.argv.includes('--legacy')
 const azureEveryday = process.argv.includes('--everyday-azure')
 let config = {
-  hotkeys: { explain: 'Control+Alt+E' }, doubleClickTranscripts: false, launchAtLogin: false,
+  hotkeys: { explain: 'Control+Alt+E', refine: 'Control+Alt+R' }, doubleClickTranscripts: false, launchAtLogin: false,
   tts: { provider: 'system', systemVoice: '', azureRegion: 'eastus', azureVoice: '', slowRate: -40, autoPlay: false },
   llm: { provider: 'openai', models: { openai: 'qwen-flash' }, baseUrls: { openai: 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1' }, codeModel: '',
     videoProvider: 'openai', videoModel: 'gemini-3.8-flash', videoBaseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai' }
@@ -27,7 +27,7 @@ if (azureEveryday) {
 }
 const everyday = JSON.stringify([config.llm.provider, config.llm.models, config.llm.baseUrls])
 let videoKey = false, videoTests = 0, everydayTests = 0
-ipcMain.handle('config:get', () => ({ settingsApiVersion: legacy ? 2 : 3, config, providers: [{ id: 'openai', label: 'OpenAI', needsKey: true }, { id: 'azure', label: 'Azure OpenAI', needsKey: true }, { id: 'claude', label: 'Claude', needsKey: true }, { id: 'ollama', label: 'Ollama', needsKey: false }], platform: 'win32', captureAvailable: false, inputPermission: 'not-required' }))
+ipcMain.handle('config:get', () => ({ settingsApiVersion: legacy ? 2 : 4, config, providers: [{ id: 'openai', label: 'OpenAI', needsKey: true }, { id: 'azure', label: 'Azure OpenAI', needsKey: true }, { id: 'claude', label: 'Claude', needsKey: true }, { id: 'ollama', label: 'Ollama', needsKey: false }], platform: 'win32', captureAvailable: false, inputPermission: 'not-required' }))
 ipcMain.handle('config:set', (_event, patch) => { config = { ...config, ...patch }; return config })
 ipcMain.handle('config:secret-status', () => ({ openai: true, azure: azureEveryday, video: videoKey }))
 ipcMain.handle('config:secret-set', (_event, { provider, value }) => {

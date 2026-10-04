@@ -1,7 +1,7 @@
 /** Types shared across main, preload and renderer. Keep this dependency-free. */
 
 /** Bump when new Settings require handlers unavailable in older background apps. */
-export const SETTINGS_API_VERSION = 3
+export const SETTINGS_API_VERSION = 4
 
 // ---------------------------------------------------------------- capture
 
@@ -26,9 +26,10 @@ export type CaptureResult =
  * WORD explains a single term *inside* a sentence; PASSAGE explains a whole selection.
  * Both are chosen from selection length. CODE explains a snippet of source code, and
  * is never chosen here: the model flags a selection as code in its ordinary answer,
- * the popup offers a button, and the click asks for CODE as a second step.
+ * the popup offers a button, and the click asks for CODE as a second step. REFINE
+ * is explicitly requested with its own hotkey and preserves the source language.
  */
-export type ExplainMode = 'word' | 'passage' | 'code'
+export type ExplainMode = 'word' | 'passage' | 'code' | 'refine'
 
 export interface PronunciationCandidate {
   ipa: string
@@ -45,6 +46,8 @@ export interface ExplainRequest {
    * sees, so a snippet of code reaches it intact rather than hard-wrap-collapsed.
    */
   raw?: string
+  /** REFINE retry: wording to avoid repeating; the original remains the source. */
+  previousRefinement?: string
   /** The surrounding sentence, when the capture source supplies one. */
   context?: string
   /** Local dictionary candidates supplied to the model for contextual selection. */
@@ -56,6 +59,8 @@ export interface ExplainRequest {
  * Kept flat and optional so a half-arrived response still renders.
  */
 export interface Explanation {
+  /** REFINE only: improved text in the original language, ready to copy. */
+  refined?: string
   /** Natural Chinese rendering. */
   zh?: string
   /** The same thing in plainer English. */
@@ -108,6 +113,12 @@ export interface ExplainState {
   model?: string
   /** True when the answer came from the cache rather than a fresh request. */
   cached?: boolean
+  /** Identifies a new refinement attempt, including retries of the same selection. */
+  refineAttempt?: number
+  /** A retry failed; the previous complete refinement is still displayed. */
+  refineRetryError?: string
+  /** A stalled refinement is being retried automatically. */
+  refineProgress?: string
 }
 
 // ---------------------------------------------------------------- config
@@ -128,6 +139,8 @@ export interface AppConfig {
   hotkeys: {
     /** Capture the selection and explain it. The popup handles read-aloud. */
     explain: string
+    /** Improve selected writing without translating it. */
+    refine: string
   }
   /** Double-clicking a line in a YouTube transcript explains it — no shortcut at all. */
   doubleClickTranscripts: boolean
@@ -187,6 +200,8 @@ export const IPC = {
   popupClose: 'popup:close',
   /** popup → main: explain the current selection as code */
   popupExplainCode: 'popup:explain-code',
+  /** popup → main: request a fresh refinement of the original selection */
+  popupRefineAgain: 'popup:refine-again',
   /**
    * popup → main: put what the user selected in the popup on the clipboard.
    *
