@@ -18,9 +18,12 @@ import { registerHotkeys, unregisterHotkeys, bindingsFor, checkAvailability } fr
 import {
   synthesize,
   toggleOrExplain,
+  toggleOrRefine,
+  cancelInFlight,
   flushCaches,
   explainClickedTranscript,
   explainLastAsCode,
+  refineAgain,
   copySelection
 } from './session.js'
 import { loadConfig, saveConfig, setSecret, hasSecret, getSecret } from '../core/config.js'
@@ -59,6 +62,7 @@ const PROBE_HOTKEYS = process.argv.includes('--probe-hotkeys')
 const VERIFY_HOTKEYS = process.argv.includes('--verify-hotkeys')
 const VERIFY_CLICK = process.argv.includes('--verify-click')
 const VERIFY_CODE = process.argv.includes('--verify-code')
+const VERIFY_REFINE = process.argv.includes('--verify-refine')
 const VERIFY_SETTINGS = process.argv.includes('--verify-settings')
 
 if (VERIFY_CAPTURE) {
@@ -81,6 +85,11 @@ if (VERIFY_CAPTURE) {
   void app.whenReady().then(async () => {
     const { runCodeVerification } = await import('./verify-code.js')
     await runCodeVerification()
+  })
+} else if (VERIFY_REFINE) {
+  void app.whenReady().then(async () => {
+    const { runRefineVerification } = await import('./verify-refine.js')
+    await runRefineVerification()
   })
 } else if (PROBE_HOTKEYS) {
   void app.whenReady().then(async () => {
@@ -117,7 +126,7 @@ function main(): void {
   // and never takes focus off whatever the user is reading.
   if (IS_MACOS) app.dock?.hide()
 
-  createPopupWindow(preloadPath())
+  createPopupWindow(preloadPath()).on('hide', cancelInFlight)
   createTray()
   registerIpc()
 
@@ -227,14 +236,17 @@ function applyHotkeys(announce = true): void {
 
   const config = loadConfig()
   const result = registerHotkeys(
-    bindingsFor(config, { explain: toggleOrExplain })
+    bindingsFor(config, { explain: toggleOrExplain, refine: toggleOrRefine })
   )
 
   // A reassignment is only useful if it sticks, so persist what actually bound —
   // otherwise the same conflict would be rediscovered on every launch.
-  const { explain } = result.resolved
-  if (explain && explain !== config.hotkeys.explain) {
-    saveConfig({ hotkeys: { explain } })
+  const { explain, refine } = result.resolved
+  if ((explain && explain !== config.hotkeys.explain) || (refine && refine !== config.hotkeys.refine)) {
+    saveConfig({ hotkeys: {
+      explain: explain || config.hotkeys.explain,
+      refine: refine || config.hotkeys.refine
+    } })
   }
 
   refreshTrayMenu()
@@ -310,6 +322,7 @@ function refreshTrayMenu(): void {
   tray.setContextMenu(
     Menu.buildFromTemplate([
       { label: `Explain selection  (${config.hotkeys.explain})`, click: () => toggleOrExplain() },
+      { label: `Refine selection  (${config.hotkeys.refine})`, click: () => toggleOrRefine() },
       { type: 'separator' },
       {
         label: 'Pause',
@@ -375,6 +388,7 @@ function openSettings(): void {
 function registerIpc(): void {
   ipcMain.on(IPC.popupClose, () => hidePopup())
   ipcMain.on(IPC.popupExplainCode, () => void explainLastAsCode())
+  ipcMain.on(IPC.popupRefineAgain, () => void refineAgain())
 
   ipcMain.handle(IPC.popupCopySelection, (_e, text: unknown) =>
     copySelection(typeof text === 'string' ? text : '')

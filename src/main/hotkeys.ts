@@ -8,7 +8,7 @@
 import { globalShortcut } from 'electron'
 import type { AppConfig } from '../shared/types.js'
 
-export type HotkeyId = 'explain'
+export type HotkeyId = keyof AppConfig['hotkeys']
 
 /**
  * Accelerators we refuse to bind, whatever the config says.
@@ -60,7 +60,15 @@ export const FALLBACKS: Record<HotkeyId, string[]> = {
     'CommandOrControl+F8'
   ].filter((candidate) =>
     process.platform === 'darwin' ? !WINDOWS_ONLY.has(candidate) : !MAC_ONLY.has(candidate)
-  )
+  ),
+  refine: [
+    'CommandOrControl+Alt+R',
+    'CommandOrControl+Alt+P',
+    'CommandOrControl+Alt+Shift+R',
+    'CommandOrControl+Shift+R',
+    'F9',
+    'CommandOrControl+F9'
+  ]
 }
 
 export interface HotkeyBinding {
@@ -92,6 +100,7 @@ function tryRegister(accelerator: string, handler: () => void): string | null {
   if (!accelerator) return 'empty'
   if (isForbidden(accelerator)) return 'would shadow a clipboard shortcut'
   try {
+    if (globalShortcut.isRegistered(accelerator)) return 'already used by another action'
     // register() returns false — it does not throw — when another process owns it.
     return globalShortcut.register(accelerator, handler) ? null : 'already taken by another app'
   } catch (err) {
@@ -110,18 +119,25 @@ function tryRegister(accelerator: string, handler: () => void): string | null {
 export function registerHotkeys(bindings: HotkeyBinding[]): RegistrationResult {
   unregisterHotkeys()
   const result: RegistrationResult = {
-    resolved: { explain: '' },
+    resolved: { explain: '', refine: '' },
     reassigned: [],
     failed: []
   }
 
-  for (const { id, accelerator, handler, description } of bindings) {
+  const pending: { binding: HotkeyBinding; problem: string }[] = []
+  // Bind every preferred shortcut before choosing fallbacks, so one action's
+  // fallback cannot take another action's explicitly configured shortcut.
+  for (const binding of bindings) {
+    const { id, accelerator, handler } = binding
     const problem = tryRegister(accelerator, handler)
     if (problem === null) {
       result.resolved[id] = accelerator
       continue
     }
+    pending.push({ binding, problem })
+  }
 
+  for (const { binding: { id, accelerator, handler, description }, problem } of pending) {
     // Preferred key is unavailable — walk the fallbacks for this action.
     const alternative = FALLBACKS[id].find(
       (candidate) => candidate !== accelerator && tryRegister(candidate, handler) === null
@@ -168,7 +184,7 @@ export function checkAvailability(accelerator: string): { ok: boolean; why?: str
 
 export function bindingsFor(
   config: AppConfig,
-  handlers: { explain: () => void }
+  handlers: Record<HotkeyId, () => void>
 ): HotkeyBinding[] {
   return [
     {
@@ -176,6 +192,12 @@ export function bindingsFor(
       accelerator: config.hotkeys.explain,
       handler: handlers.explain,
       description: 'Explain selection'
+    },
+    {
+      id: 'refine',
+      accelerator: config.hotkeys.refine,
+      handler: handlers.refine,
+      description: 'Refine selection'
     }
   ]
 }

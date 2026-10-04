@@ -496,6 +496,17 @@ export function Settings(): React.ReactElement {
           value={config.hotkeys.explain}
           onCommit={(v) => patch({ hotkeys: { ...config.hotkeys, explain: v } })}
         />
+        <HotkeyRecorder
+          label="Refine selection"
+          value={config.hotkeys.refine}
+          onCommit={(v) => patch({ hotkeys: { ...config.hotkeys, refine: v } })}
+        />
+        <p className="text-[11px] leading-snug" style={{ color: 'var(--text-subtle)' }}>
+          Refine improves spelling, grammar, wording, and structure in the original language.
+          Select text in an editable textbox or read-only content, then use the refinement
+          shortcut. Copy the result from the popup and paste it where you need it.
+          Uses the model configured under Explanations.
+        </p>
 
         <label className="flex items-center gap-2 text-[13px]">
           <input
@@ -507,7 +518,7 @@ export function Settings(): React.ReactElement {
         </label>
         <p className="text-[11px] leading-snug" style={{ color: 'var(--text-subtle)' }}>
           Ctrl+C, Ctrl+V and Ctrl+X can never be bound — EasyUnderstand will not be the reason a
-          copy or paste stops working. If a shortcut you pick is already owned by another app,
+          copy or paste stops working. If a shortcut you pick is already used by another action or app,
           EasyUnderstand moves to a free one rather than leaving you with nothing.
         </p>
       </Card>

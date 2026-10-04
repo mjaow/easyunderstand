@@ -25,6 +25,7 @@
     "verify:hotkeys": "electron-vite build && electron . --verify-hotkeys",
     "verify:click": "electron-vite build && electron . --verify-click",
     "verify:code": "electron-vite build && electron . --verify-code",
+    "verify:refine": "electron-vite build && electron . --verify-refine",
     "build:extension": "node scripts/build-extension.mjs",
     "setup:youtube": "npm run build && node scripts/setup-youtube.mjs",
     "verify:youtube": "node scripts/verify-content.mjs && node scripts/verify-extension.mjs && node scripts/verify-native.mjs",

@@ -114,6 +114,12 @@ function Section({
   )
 }
 
+interface CopyNotice {
+  kind: 'pending' | 'success' | 'error'
+  text: string
+  detail?: string
+}
+
 /**
  * Selecting text in the popup copies it.
  *
@@ -127,18 +133,41 @@ function Section({
  * what the user meant, and rewriting the clipboard on each character would be both
  * wasteful and wrong.
  *
- * @returns the copy confirmation or failure, or null when there is no notice.
+ * Also supplies the explicit copy action for refinement, with the same feedback.
  */
-function useCopyOnSelect(lookupText: string | undefined): { text: string; error: boolean } | null {
-  const [notice, setNotice] = useState<{ text: string; error: boolean } | null>(null)
+function useCopyOnSelect(lookupText: string | undefined): {
+  notice: CopyNotice | null
+  copy: (text: string) => Promise<void>
+} {
+  const [notice, setNotice] = useState<CopyNotice | null>(null)
+  const request = useRef(0)
+
+  const copy = useCallback(async (text: string): Promise<void> => {
+    if (!text.trim()) return
+    const current = ++request.current
+    setNotice({ kind: 'pending', text: 'Copying…' })
+    try {
+      const res = await window.easytranslate.copySelection(text)
+      if (current !== request.current) return
+      setNotice(
+        res.ok
+          ? { kind: 'success', text: 'Copied to clipboard', detail: copiedPreview(text) }
+          : { kind: 'error', text: 'Copy failed', detail: res.error || 'Could not copy the selection. Please try again.' }
+      )
+    } catch (err) {
+      if (current !== request.current) return
+      setNotice({
+        kind: 'error', text: 'Copy failed',
+        detail: (err instanceof Error ? err.message : String(err)) || 'Could not copy the selection. Please try again.'
+      })
+    }
+  }, [])
 
   useEffect(() => {
     let selecting = false
-    let request = 0
-    let active = true
     const reset = (): void => {
       selecting = false
-      request++
+      request.current++
       setNotice(null)
     }
     reset()
@@ -161,23 +190,7 @@ function useCopyOnSelect(lookupText: string | undefined): { text: string; error:
 
       // Copy once per gesture, even when the words match an earlier copy: another
       // app may have replaced the clipboard since then.
-      const current = ++request
-      setNotice(null)
-      try {
-        const res = await window.easytranslate.copySelection(selected)
-        if (!active || current !== request) return
-        setNotice(
-          res.ok
-            ? { text: copiedNotice(selected), error: false }
-            : { text: res.error || 'Could not copy the selection.', error: true }
-        )
-      } catch (err) {
-        if (!active || current !== request) return
-        setNotice({
-          text: (err instanceof Error ? err.message : String(err)) || 'Could not copy the selection.',
-          error: true
-        })
-      }
+      await copy(selected)
     }
 
     // On the document rather than the content: a drag often ends outside the element
@@ -187,28 +200,22 @@ function useCopyOnSelect(lookupText: string | undefined): { text: string; error:
     document.addEventListener('mousedown', start)
     document.addEventListener('mouseup', listener)
     return () => {
-      active = false
+      request.current++
       unsubscribe()
       document.removeEventListener('mousedown', start)
       document.removeEventListener('mouseup', listener)
     }
-  }, [lookupText])
+  }, [lookupText, copy])
 
-  // Success is brief; a failure stays visible until the next attempt or lookup.
-  useEffect(() => {
-    if (notice === null || notice.error) return
-    const timer = setTimeout(() => setNotice(null), 1600)
-    return () => clearTimeout(timer)
-  }, [notice])
-
-  return notice
+  // Keep the result until the next copy, lookup, or close, so it cannot be missed.
+  return { notice, copy }
 }
 
 /** Short enough to read at a glance, quoted so it is clear what landed. */
-function copiedNotice(text: string): string {
+function copiedPreview(text: string): string {
   const oneLine = text.replace(/\s+/g, ' ')
   const shown = oneLine.length > 32 ? `${oneLine.slice(0, 32)}…` : oneLine
-  return `Copied “${shown}”`
+  return `“${shown}”`
 }
 
 export function Popup(): React.ReactElement | null {
@@ -229,7 +236,7 @@ export function Popup(): React.ReactElement | null {
   // explicitly when it goes away.
   useEffect(() => window.easytranslate.onStopAudio(() => stopAudio()), [])
 
-  const copyNotice = useCopyOnSelect(state?.text)
+  const { notice: copyNotice, copy } = useCopyOnSelect(state ? `${state.mode}\0${state.raw ?? state.text}\0${state.refineAttempt ?? ''}` : undefined)
 
   // Size the window to whatever the content actually needs.
   useEffect(() => {
@@ -250,8 +257,9 @@ export function Popup(): React.ReactElement | null {
   const { explanation: ex, mode } = state
   const isWord = mode === 'word'
   const isCode = mode === 'code'
+  const isRefine = mode === 'refine'
   // The model's verdict on the ordinary answer: offer the code explanation as a step.
-  const offerCode = !isCode && ex.isCode === true
+  const offerCode = !isCode && !isRefine && ex.isCode === true
   // A snippet's headline is its first line: twelve lines of code must not become a
   // twelve-line header.
   const shaped = state.raw ?? state.text
@@ -292,6 +300,11 @@ export function Popup(): React.ReactElement | null {
           style={{ borderColor: 'var(--border)', background: 'var(--surface-muted)' }}
         >
           <div className="et-selectable min-w-0 flex-1">
+            {isRefine && (
+              <div className="mb-0.5 text-[10px] font-medium uppercase tracking-wider" style={{ color: 'var(--accent)' }}>
+                Refine · same language
+              </div>
+            )}
             <div className={`font-semibold leading-snug ${isCode ? 'font-mono text-[12px]' : 'text-[14px]'}`}>
               {headline || 'EasyUnderstand'}
             </div>
@@ -326,8 +339,8 @@ export function Popup(): React.ReactElement | null {
 
           <div className="flex shrink-0 items-center">
             {/* Code is not read aloud; the English explanation below has its own button. */}
-            {!isCode && <SpeakButton text={state.text} onStatus={setStatus} />}
-            {!isCode && <SpeakButton text={state.text} slow onStatus={setStatus} />}
+            {!isCode && !isRefine && <SpeakButton text={state.text} onStatus={setStatus} />}
+            {!isCode && !isRefine && <SpeakButton text={state.text} slow onStatus={setStatus} />}
             <button
               onClick={() => window.easytranslate.close()}
               title="Close (Esc)"
@@ -349,6 +362,12 @@ export function Popup(): React.ReactElement | null {
           ) : (
             <>
               {empty && state.status === 'streaming' && <Skeleton />}
+
+              {isRefine && (
+                <Section label="refined text">
+                  {ex.refined && <div style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{ex.refined}</div>}
+                </Section>
+              )}
 
               {offerCode && (
                 <button
@@ -505,6 +524,40 @@ export function Popup(): React.ReactElement | null {
             </>
           )}
 
+          {isRefine && state.text.trim() && (
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={() => void copy(ex.refined ?? '')}
+                disabled={state.status !== 'done' || !ex.refined || !!state.warning || copyNotice?.kind === 'pending'}
+                className="rounded-md px-2.5 py-1.5 text-[12px] font-medium disabled:opacity-40"
+                style={{ background: 'var(--accent)', color: 'var(--surface)' }}
+              >
+                {copyNotice?.kind === 'pending' ? 'Copying…' : 'Copy refined text'}
+              </button>
+              <button
+                onClick={() => window.easytranslate.refineAgain()}
+                disabled={state.status === 'streaming' || copyNotice?.kind === 'pending'}
+                className="rounded-md border px-2.5 py-1.5 text-[12px] font-medium disabled:opacity-40"
+                style={{ borderColor: 'var(--border)', color: 'var(--accent)' }}
+                title="Try different wording with the same meaning and language"
+              >
+                {state.status === 'streaming' ? 'Refining…' : 'Try another version'}
+              </button>
+            </div>
+          )}
+
+          {state.refineRetryError && (
+            <div role="alert" className="text-[12px]" style={{ color: 'var(--danger)' }}>
+              Couldn’t create another version. {state.refineRetryError} Your previous version is still shown.
+            </div>
+          )}
+
+          {isRefine && state.status === 'streaming' && state.refineProgress && (
+            <div role="status" className="text-[12px]" style={{ color: 'var(--text-muted)' }}>
+              {state.refineProgress}
+            </div>
+          )}
+
           {/* An answer that was cut short is still an answer. The caveat goes beside
               it, never in place of it. */}
           {state.warning && state.status !== 'error' && (
@@ -525,11 +578,24 @@ export function Popup(): React.ReactElement | null {
 
         {copyNotice && (
           <div
-            role={copyNotice.error ? 'alert' : 'status'}
-            className="px-3 pb-2.5 text-[11px]"
-            style={{ color: copyNotice.error ? 'var(--danger)' : 'var(--text-subtle)' }}
+            role={copyNotice.kind === 'error' ? 'alert' : 'status'}
+            aria-atomic="true"
+            className="sticky bottom-0 z-10 border-t px-3 py-2 text-[12px]"
+            style={{
+              borderColor: 'var(--border)',
+              background: 'var(--surface)',
+              color: copyNotice.kind === 'error' ? 'var(--danger)' : 'var(--accent)'
+            }}
           >
-            {copyNotice.text}
+            <div className="flex items-center gap-1.5 font-medium">
+              <span aria-hidden="true">{copyNotice.kind === 'success' ? '✓' : copyNotice.kind === 'error' ? '!' : '…'}</span>
+              <span>{copyNotice.text}</span>
+            </div>
+            {copyNotice.detail && (
+              <div className="mt-0.5 break-words text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                {copyNotice.detail}
+              </div>
+            )}
           </div>
         )}
       </div>

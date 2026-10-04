@@ -65,7 +65,7 @@ vi.mock('../src/providers/llm/registry.js', () => ({
 }))
 vi.mock('../src/providers/tts/registry.js', () => ({ speak: vi.fn() }))
 
-import { explainSelection } from '../src/main/session.js'
+import { explainSelection, refineSelection } from '../src/main/session.js'
 import { sendCopy } from '../src/main/native/index.js'
 
 beforeEach(() => {
@@ -79,6 +79,18 @@ beforeEach(() => {
 afterEach(() => { vi.useRealTimers() })
 
 describe('selected sentence to translated popup', () => {
+  it('shares safe capture between refinement and explanation when both hotkeys are pressed', async () => {
+    const refine = refineSelection()
+    const explain = explainSelection()
+    await vi.runAllTimersAsync()
+    await Promise.all([refine, explain])
+    expect(sendCopy).toHaveBeenCalledTimes(1)
+    expect(fixture.explain).toHaveBeenCalledTimes(1)
+    expect(fixture.explain).toHaveBeenCalledWith(
+      expect.objectContaining({ mode: 'refine', raw: fixture.sentence }), expect.any(AbortSignal)
+    )
+    expect(fixture.clipboardText).toBe('original clipboard')
+  })
   it('captures delayed text and translates the whole sentence once during repeated hotkeys', async () => {
     const first = explainSelection()
     const repeat = explainSelection()

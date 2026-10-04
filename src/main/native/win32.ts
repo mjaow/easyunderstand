@@ -142,11 +142,12 @@ function isDown(b: Bindings, vk: number): boolean {
 /**
  * Send a clean Ctrl+C to whatever window currently has focus.
  *
- * The subtlety: our hotkey is itself a chord (Ctrl+Alt+Space), so at the moment it
+ * The subtlety: our hotkey is itself a chord (Ctrl+Alt+E or Ctrl+Alt+R), so when it
  * fires the user is still *physically holding* Ctrl and Alt. A naive Ctrl+C would
- * reach the target as Ctrl+Alt+C and copy nothing. So we first synthesise key-ups for
- * every modifier the OS thinks is down, then send the copy — all in one SendInput
- * batch, which Windows guarantees won't be interleaved with other input.
+ * reach the target as Ctrl+Alt+C and copy nothing. Press Control again before
+ * releasing the other modifiers, then send C and release Control, all in one
+ * SendInput batch. Keeping Control down masks Alt's menu activation: releasing
+ * every modifier first can move focus to a menu before the copy reaches the editor.
  *
  * We deliberately do NOT re-press those modifiers afterwards: the user's fingers are
  * still on them, so releasing generates real key-ups. Re-pressing risks a stuck key.
@@ -157,13 +158,14 @@ export function sendCopy(): number {
   const b = load()
   if (!b) return -1
 
-  const events: Record<string, unknown>[] = []
+  // Press Control before releasing Alt: releasing every modifier first can
+  // activate a Windows menu, which then consumes the copy instead of the textbox.
+  const events: Record<string, unknown>[] = [keyEvent(VK_CONTROL, false)]
 
-  for (const vk of [VK_MENU, VK_SHIFT, VK_LWIN, VK_RWIN, VK_CONTROL]) {
+  for (const vk of [VK_MENU, VK_SHIFT, VK_LWIN, VK_RWIN]) {
     if (isDown(b, vk)) events.push(keyEvent(vk, true))
   }
 
-  events.push(keyEvent(VK_CONTROL, false))
   events.push(keyEvent(VK_C, false))
   events.push(keyEvent(VK_C, true))
   events.push(keyEvent(VK_CONTROL, true))

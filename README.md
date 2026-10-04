@@ -12,6 +12,7 @@ along the way.
 | What you want to understand | What you get |
 |---|---|
 | Words and passages | Plain English and Chinese explanations, common or contextual meanings, examples, dictionary pronunciation, and read-aloud. |
+| Your writing | Clearer spelling, grammar, wording, structure, and flow in the original language. |
 | Code | Its purpose, step-by-step reasoning, design choices, and possible bugs or edge cases in the selected snippet. |
 | YouTube videos | The core argument and takeaways first, concise breakdowns with timestamp sources, and a separate assessment of the evidence and reasoning. |
 
@@ -44,6 +45,25 @@ translation, and vocabulary together.*
 
 The selection popup does not take focus, and text capture restores your clipboard.
 See [How it works](#how-it-works) for the supported capture paths and their limits.
+
+### Refine writing in the same language
+
+Select text in an **editable textbox** (a draft email, chat, or document) or
+**read-only content**, then press **`Ctrl+Alt+R`** on Windows or **`⌘⌥R`** on macOS.
+The popup improves spelling, grammar, word choice, sentence structure, and logical
+flow while keeping your meaning. English stays English; Chinese stays Chinese,
+including Simplified or Traditional characters. Mixed-language text keeps its languages.
+
+Click **Copy refined text**, then paste it into any editable field. The source text
+stays in place and capture restores your clipboard. Refinement uses your existing
+**Explanations** model and key. Change either shortcut under **Settings → Hotkeys**;
+if a shortcut is taken, the app chooses and saves an available alternative.
+
+Cloud refinement automatically retries once if no text arrives for five seconds
+or a response stops progressing for five seconds. It shows **Connection is slow.
+Retrying…** and keeps the original selection. Azure desktop lookups use Electron’s
+browser networking, and Copy becomes available as soon as Azure confirms completion.
+The recovery request can incur an additional API charge; no new setting is needed.
 
 ### Translate YouTube captions and transcript lines
 
@@ -226,10 +246,12 @@ Settings opens by itself the first time, since nothing works until step 1 is don
 | Gesture | Result |
 |---|---|
 | Select text, press `Ctrl+Alt+E` (`⌘⌥E`) | Explain the selection |
+| Select text, press `Ctrl+Alt+R` (`⌘⌥R`) | Refine writing in its original language |
 | Double-click a YouTube caption exposed by the page | Explain the current caption |
 | Double-click a line in the YouTube transcript panel | Explain that line |
 | `Esc`, or the shortcut again | Close the popup |
 | Select any words in the popup | Copies them — selecting *is* the copy |
+| Click **Copy refined text** | Copy the complete refinement, ready to paste |
 
 - **Three words or fewer** are treated as a term: dictionary IPA when available,
   part of speech, common meanings when selected alone or the relevant meaning when
@@ -247,8 +269,13 @@ Settings opens by itself the first time, since nothing works until step 1 is don
   than everyday lookups use, since design and bug reasoning is where that pays off.
 - **🔊** reads it aloud, **🐢** reads it slowly, **⏹** stops.
 - **Drag across anything in the popup to copy it.** Double-click a word, or sweep a
-  phrase; it goes on the clipboard the moment you let go, and the popup says what it
-  took. There is no ⌘C to press and no copy button, for a reason worth knowing — see
+  phrase; it goes on the clipboard when you let go. Refinement also has a **Copy
+  refined text** button. **Try another version** requests different wording from
+  the original selection, keeping its meaning and language. No configuration is
+  needed; each click requests a fresh result. A failed retry keeps the previous
+  complete version available. Every copy shows **Copying…**, then **Copied to clipboard**
+  or **Copy failed**. The result stays visible at the bottom while you scroll, until
+  the next copy, lookup, or close. No copy shortcut is needed — see
   [How it works](#how-it-works).
 
 The double-click needs no shortcut. Words come only from captions or transcript
@@ -420,6 +447,7 @@ npm run verify:capture # end-to-end capture: reads the selection, restores the c
 npm run verify:hotkeys # clipboard shortcuts refused, conflicts fall back, availability check is honest
 npm run verify:click   # real OS double-clicks on a YouTube-shaped page come back as the right lines
 npm run verify:code    # asks the configured model: snippets come back as code, prose as prose
+npm run verify:refine  # asks the configured model: English, Chinese, and mixed-language editing
 npm run probe:hotkeys  # which shortcuts are free on this machine
 ```
 
@@ -486,8 +514,8 @@ both free.
    listeners. The optional YouTube companion separately adds its own button and
    reads caption data, without borrowing the clipboard or handling selection clicks.
 2. A capture always restores the clipboard, every format, typically within ~150ms.
-   Selecting text in the popup explicitly replaces the clipboard with the selected
-   text and leaves it written.
+   Selecting text in the popup or clicking **Copy refined text** explicitly replaces
+   the clipboard with that text and leaves it written.
 3. The popup never takes focus, and that is checked rather than assumed. Electron's
    `focusable: false` is
    [unreliable on Windows](https://github.com/electron/electron/issues/11049), so there
