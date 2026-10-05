@@ -246,6 +246,33 @@ export async function runClickVerification(): Promise<void> {
       caption ? `got "${caption}"` : 'got nothing'
     )
 
+    // The primary monitor alone cannot catch DPI virtualisation in the Windows
+    // reader. Exercise physical points near each monitor's far edge, including
+    // secondary monitors with a different scale or a negative screen origin.
+    for (const target of screen.getAllDisplays()) {
+      const area = target.workArea
+      win.setBounds({
+        x: area.x + Math.max(0, area.width - bounds.width),
+        y: area.y + Math.max(0, area.height - bounds.height),
+        width: bounds.width,
+        height: bounds.height
+      })
+      await sleep(200)
+      const placed = win.getBounds()
+      const label = `display ${target.id} at ${target.scaleFactor * 100}%`
+      for (const [kind, offsetY, expected] of [
+        ['transcript', ROW_TOP + ROW_HEIGHT / 2, LINES[0][1]],
+        ['caption', PLAYER_TOP + 30, CAPTION]
+      ] as const) {
+        const point = dipToScreen({ x: placed.x + 300, y: placed.y + offsetY })
+        const { text, read } = await readTranscriptAtPoint(point.x, point.y)
+        check(text === expected, `${kind} read on ${label}`,
+          text === expected ? '' : `at ${point.x},${point.y}: ${read?.chain.split('\n')[0] ?? 'no read'}`)
+      }
+    }
+    win.setBounds(bounds)
+    await sleep(200)
+
     // Removing CC leaves a video frame with no transcript text to explain.
     await win.webContents.executeJavaScript("document.querySelector('.ytp-caption-window-container').remove()")
     const { text: noCaption, read: playerRead } = await readTranscriptAtPoint(video.x, video.y)

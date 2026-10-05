@@ -19,6 +19,22 @@
 $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 
+# Electron supplies physical screen pixels. Windows PowerShell is only system-DPI
+# aware, so UIA hit tests can land on a different window on monitors whose scale
+# differs from the primary display. Opt this reader thread into per-monitor DPI
+# before creating any UIA objects; changing the process default can be refused
+# because PowerShell's host has already chosen one.
+Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+public static class TranscriptDpi {
+    [DllImport("user32.dll")]
+    public static extern IntPtr SetThreadDpiAwarenessContext(IntPtr context);
+}
+'@
+$previousDpi = [TranscriptDpi]::SetThreadDpiAwarenessContext([IntPtr](-4))
+if ($previousDpi -eq [IntPtr]::Zero) { exit 0 }
+
 # WindowsBase carries System.Windows.Point, which UIAutomationClient does not pull in.
 Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes, WindowsBase
 

@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { PanelTarget, UnderstandResponse } from '../extension/background.js'
+import { watchPositionKey, watchViewKey } from '../extension/watch-view-state.js'
 
 let updated: Parameters<typeof chrome.tabs.onUpdated.addListener>[0]
 let activated: Parameters<typeof chrome.tabs.onActivated.addListener>[0]
@@ -23,7 +24,7 @@ beforeEach(async () => {
     tabs: { get: getTab, onActivated: { addListener: (listener: typeof activated) => { activated = listener } },
       onRemoved: { addListener: (listener: typeof removed) => { removed = listener } },
       onUpdated: { addListener: (listener: typeof updated) => { updated = listener } } },
-    storage: { session: { set: save, get: read, remove: async (key: string) => { delete stored[key] } } }
+    storage: { session: { set: save, get: read, remove: async (keys: string | string[]) => { for (const key of [keys].flat()) delete stored[key] } } }
   })
   await import('../extension/background.js')
 })
@@ -36,6 +37,48 @@ function click(sender: chrome.runtime.MessageSender = { tab, url: tab.url }) {
 }
 
 describe('video panel target updates', () => {
+  it.each(['resume-video-view', 'watch-plan'])('reopens a saved plan for %s without creating a new generation token', async action => {
+    const previous: PanelTarget = { tabId: 2, windowId: 1, videoId: 'jNQXAC9IVRw', title: tab.title!,
+      start: true, token: 'saved-plan', action: 'watch-plan' }
+    Object.assign(stored, { 'target:1': previous, 'tab-target:2': previous,
+      [watchViewKey(2)]: { videoId: previous.videoId, token: previous.token } })
+    const respond = vi.fn()
+    message({ action }, { tab, url: tab.url }, respond)
+    expect(openPanel).toHaveBeenCalledWith({ windowId: 1 })
+    expect(read).not.toHaveBeenCalled()
+    await vi.waitFor(() => expect(respond).toHaveBeenCalledWith({ ok: true }))
+    expect(stored['target:1']).toEqual(previous)
+  })
+
+  it('only offers a return action for work on the current video', async () => {
+    Object.assign(stored, { 'tab-target:2': { tabId: 2, windowId: 1, videoId: 'jNQXAC9IVRw', start: true, action: 'watch-plan', token: 'plan' },
+      [watchViewKey(2)]: { videoId: 'jNQXAC9IVRw', token: 'plan' } })
+    const respond = vi.fn()
+    message({ action: 'get-video-view' }, { tab, url: tab.url }, respond)
+    await vi.waitFor(() => expect(respond).toHaveBeenLastCalledWith({ ok: true, action: 'watch-plan' }))
+    message({ action: 'get-video-view' }, { tab: { ...tab, url: 'https://www.youtube.com/watch?v=another-video' }, url: tab.url }, respond)
+    await vi.waitFor(() => expect(respond).toHaveBeenLastCalledWith({ ok: true, action: undefined }))
+    delete stored[watchViewKey(2)]
+    const cleared = vi.fn()
+    message({ action: 'get-video-view' }, { tab, url: tab.url }, cleared)
+    await vi.waitFor(() => expect(cleared).toHaveBeenCalledWith({ ok: true, action: undefined }))
+    expect(openPanel).not.toHaveBeenCalled()
+    expect(save).not.toHaveBeenCalled()
+  })
+
+  it('removes saved plan data and position when a closed sidebar tab navigates or closes', async () => {
+    message({ action: 'watch-plan' }, { tab, url: tab.url }, vi.fn())
+    await vi.waitFor(() => expect(save).toHaveBeenCalledTimes(1))
+    Object.assign(stored, { [watchViewKey(2)]: { token: 'old' }, [watchPositionKey(2)]: { scrollTop: 320 } })
+    updated(2, { url: 'https://www.youtube.com/' }, { ...tab, url: 'https://www.youtube.com/' })
+    await vi.waitFor(() => expect(save).toHaveBeenCalledTimes(2))
+    expect(stored[watchViewKey(2)]).toBeUndefined()
+    expect(stored[watchPositionKey(2)]).toBeUndefined()
+    Object.assign(stored, { [watchViewKey(2)]: { token: 'old' }, [watchPositionKey(2)]: { scrollTop: 320 } })
+    removed(2, { windowId: 1, isWindowClosing: false })
+    await vi.waitFor(() => expect(stored[watchViewKey(2)]).toBeUndefined())
+    expect(stored[watchPositionKey(2)]).toBeUndefined()
+  })
   it('restores each tab request after switching away, including after a service-worker restart', async () => {
     message({ action: 'watch-plan' }, { tab, url: tab.url }, vi.fn())
     await vi.waitFor(() => expect(save).toHaveBeenCalledTimes(1))

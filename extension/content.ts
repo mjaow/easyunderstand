@@ -1,6 +1,8 @@
 import type { UnderstandResponse } from './background.js'
+import { installFullscreenReturn } from './fullscreen-return.js'
 
 (() => {
+  installFullscreenReturn()
   function mount(): void {
     const existing = document.getElementById('easytranslate-understand')
     if (location.pathname !== '/watch') { existing?.remove(); document.getElementById('easytranslate-plan-watch')?.remove(); document.getElementById('easytranslate-feedback')?.remove(); return }
@@ -49,6 +51,7 @@ import type { UnderstandResponse } from './background.js'
           }
           button.textContent = label
           button.title = title
+          document.getElementById('easytranslate-return-view')?.remove()
         } catch {
           reconnect = true
           for (const item of buttons) {

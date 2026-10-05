@@ -108,6 +108,14 @@ form is required. Click a timestamp or **Next focus section** to navigate. Plann
 uses the same video model and key, including an existing Azure OpenAI GPT-6 Luna
 deployment.
 
+Some browsers close the entire sidebar when a YouTube video enters fullscreen.
+After exiting, click **Return to plan** or **Plan watch** to restore the completed
+plan, expanded sections, and scroll position without another capture or model
+request. **Plan again** inside the sidebar deliberately generates a fresh plan.
+The view is retained for the current browser session and discarded when that tab
+changes videos, closes, or you clear the cache. Browsers require a user gesture to
+reopen the sidebar, so exiting fullscreen alone cannot reliably reopen it.
+
 ![YouTube with the Understand video button below the player and an arrow pointing to the EasyUnderstand summary in the browser side panel.](docs/images/youtube-understand-video-masked.png)
 
 *One click opens an analysis of the complete caption transcript. The panel also
@@ -458,6 +466,13 @@ npm run probe:hotkeys  # which shortcuts are free on this machine
 Every one of these runs on both platforms and exercises that platform's own layer —
 `verify:capture` posts a real `Ctrl+C` or `⌘C`, `verify:click` sends real OS mouse
 clicks and reads the real accessibility tree, `verify:code` asks the configured model.
+`verify:click` also checks caption and transcript capture on every connected display,
+including monitors with different scaling and negative screen coordinates.
+On Windows, `npm test` also runs the real caption reader in both DPI-unaware and
+system-DPI-aware PowerShell hosts and checks its DPI mode through Windows APIs.
+That regression check needs no second monitor and does not move the pointer or
+open a window. Keep the multi-monitor `verify:click` check for actual hit testing;
+the DPI check alone cannot validate which caption is captured.
 
 `verify:capture` may need you to **click its test window** when it appears: Windows
 will not let a terminal-launched app focus itself at all, and macOS occasionally loses
