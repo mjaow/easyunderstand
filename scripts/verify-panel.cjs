@@ -33,8 +33,9 @@ app.whenReady().then(async () => {
     window.chrome = {
       windows: { getCurrent: async () => ({id:1}) },
       storage: { session: {
-        get: async () => state.stored,
-        set: async values => { Object.assign(state.stored, values) }
+        get: async () => structuredClone(state.stored),
+        set: async values => { Object.assign(state.stored, structuredClone(values)) },
+        remove: async keys => { for (const key of [keys].flat()) delete state.stored[key] }
       }, onChanged: { addListener: f => state.onChange = f } },
       tabs: { query: async () => [], onUpdated: {addListener: f => state.onUpdated = f}, onRemoved: {addListener: f => state.onRemoved = f} },
       scripting: { executeScript: async options => {

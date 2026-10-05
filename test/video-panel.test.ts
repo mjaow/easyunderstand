@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { PanelTarget, VideoAction } from '../extension/background.js'
 import type { VideoEvent, VideoRequest, VideoTranscript } from '../src/shared/video.js'
+import { watchPositionKey, watchViewKey } from '../extension/watch-view-state.js'
 
 const transcript: VideoTranscript = {
   videoId: 'jNQXAC9IVRw', title: 'Current lecture', language: 'en', automatic: false,
@@ -62,7 +63,8 @@ beforeEach(() => {
     windows: { getCurrent: async () => ({ id: 1 }) },
     storage: { session: {
       get: readStorage,
-      set: async (values: Record<string, unknown>) => { Object.assign(stored, values) }
+      set: async (values: Record<string, unknown>) => { Object.assign(stored, structuredClone(values)) },
+      remove: async (keys: string | string[]) => { for (const key of [keys].flat()) delete stored[key] }
     }, onChanged: { addListener: (listener: typeof onChange) => { onChange = listener } } },
     tabs: { query,
       onUpdated: { addListener: (listener: typeof onUpdated) => { onUpdated = listener } },
@@ -161,6 +163,86 @@ describe('one-click video panels', () => {
 })
 
 describe('video views belong to their tabs', () => {
+  it('restores a completed plan after the browser destroys and recreates the sidebar', async () => {
+    stored['target:1'] = target('watch-plan')
+    await import('../extension/sidepanel.js')
+    await finished('watch-plan')
+    get('watch-ranges').querySelector('details')!.open = true
+    ;(get('transcript-section') as HTMLDetailsElement).open = true
+    document.documentElement.scrollTop = 320
+    window.dispatchEvent(new PageTransitionEvent('pagehide'))
+    expect(get('watch-result')).toBeNull()
+    expect(stored[watchViewKey(2)]).toMatchObject({ token: 'first-click', transcript, plan: { overview: 'Focus on the method.' } })
+    expect(stored[watchPositionKey(2)]).toMatchObject({ scrollTop: 320, expanded: [true], transcriptOpen: true })
+    document.body.innerHTML = readFileSync('extension/sidepanel.html', 'utf8')
+    document.documentElement.scrollTop = 0
+    vi.resetModules()
+    await import('../extension/sidepanel.js')
+    await finished('watch-plan')
+    expectView('watch-plan')
+    expect(get('watch-ranges').querySelector('details')!.open).toBe(true)
+    expect((get('transcript-section') as HTMLDetailsElement).open).toBe(true)
+    expect(get('transcript').querySelectorAll('.caption-row')).toHaveLength(transcript.segments.length)
+    expect(document.documentElement.scrollTop).toBe(320)
+    expect(requests.map(request => request.action)).toEqual(['ping', 'watch-plan'])
+    expect(executeScript).toHaveBeenCalledTimes(1)
+    executeScript.mockResolvedValueOnce([{ result: true }])
+    get('watch-ranges').querySelector<HTMLButtonElement>('.timestamp')!.click()
+    expect(executeScript).toHaveBeenLastCalledWith(expect.objectContaining({ target: { tabId: 2 }, args: [transcript.videoId, 0] }))
+    get('plan-watch').click()
+    await finished('watch-plan')
+    expect(requests.at(-1)).toMatchObject({ action: 'watch-plan', fresh: true })
+  })
+
+  it('keeps a suspended sidebar document intact when it returns', async () => {
+    stored['target:1'] = target('watch-plan')
+    await import('../extension/sidepanel.js')
+    await finished('watch-plan')
+    const result = get('watch-result')
+    window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: true }))
+    window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true }))
+    expect(get('watch-result')).toBe(result)
+    expect(result.hidden).toBe(false)
+    expect(requests.map(request => request.action)).toEqual(['ping', 'watch-plan'])
+  })
+
+  it.each(['while loading', 'after loading'])('honors a saved-view deletion from another window %s', async when => {
+    const original = target('watch-plan')
+    stored['target:1'] = original
+    await import('../extension/sidepanel.js')
+    await finished('watch-plan')
+    window.dispatchEvent(new PageTransitionEvent('pagehide'))
+    stored['target:1'] = { ...target('analyze', 'other-tab'), tabId: 3, videoId: null, start: false }
+    document.body.innerHTML = readFileSync('extension/sidepanel.html', 'utf8')
+    const earlier = structuredClone(stored)
+    const read = deferred<Record<string, unknown>>()
+    readStorage.mockClear().mockReturnValueOnce(read.promise)
+    vi.resetModules()
+    const opening = import('../extension/sidepanel.js')
+    await vi.waitFor(() => expect(readStorage).toHaveBeenCalled())
+    if (when === 'after loading') { read.resolve(earlier); await opening }
+    delete stored[watchViewKey(2)]
+    onChange({ [watchViewKey(2)]: { oldValue: earlier[watchViewKey(2)] } }, 'session')
+    if (when === 'while loading') { read.resolve(earlier); await opening }
+    publish({ ...original, start: false })
+    expect(get('watch-result').hidden).toBe(true)
+    expect(requests.map(request => request.action)).toEqual(['ping', 'watch-plan'])
+  })
+
+  it.each(['different video', 'same video after navigating back'])('does not restore a closed view for a %s', async reason => {
+    stored['target:1'] = target('watch-plan')
+    await import('../extension/sidepanel.js')
+    await finished('watch-plan')
+    window.dispatchEvent(new PageTransitionEvent('pagehide'))
+    stored['target:1'] = { ...target('watch-plan', 'new-page'), start: false,
+      videoId: reason === 'different video' ? 'another-video' : transcript.videoId }
+    document.body.innerHTML = readFileSync('extension/sidepanel.html', 'utf8')
+    vi.resetModules()
+    await import('../extension/sidepanel.js')
+    expect(get('watch-result').hidden).toBe(true)
+    expect(requests.map(request => request.action)).toEqual(['ping', 'watch-plan'])
+  })
+
   it.each<VideoAction>(['analyze', 'watch-plan'])('restores %s with its expanded sections and scroll position without another request', async action => {
     const original = target(action)
     stored['target:1'] = original
@@ -280,6 +362,8 @@ describe('video views belong to their tabs', () => {
     await finished('watch-plan')
     get('clear-cache').click()
     await vi.waitFor(() => expect(get('status').textContent).toContain('Cache cleared'))
+    expect(stored[watchViewKey(2)]).toBeUndefined()
+    expect(stored[watchViewKey(3)]).toBeUndefined()
     publish(original)
     expect(get('watch-result').hidden).toBe(true)
     expect(get('plan-watch').textContent).toBe('Plan watch')
