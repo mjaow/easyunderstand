@@ -38,8 +38,11 @@ export class AzureResponsesProvider implements LlmProvider {
   }
 
   async *explain(req: ExplainRequest, signal: AbortSignal): AsyncIterable<string> {
-    // Reasoning tokens come out of the same budget here, so Azure gets extra room.
-    yield* this.generate({ system: systemPrompt(req.mode), user: userPrompt(req), maxTokens: outputBudget(req) + 2000 }, signal)
+    // A short non-reasoning edit/translation already has ample output room.
+    // Reserve extra tokens for reasoning, code, and longer selections as before.
+    const shortText = req.mode !== 'code' && (req.raw ?? req.text).length < 1000
+    const extra = this.opts.reasoningEffort === 'none' && shortText ? 0 : 2000
+    yield* this.generate({ system: systemPrompt(req.mode), user: userPrompt(req), maxTokens: outputBudget(req) + extra }, signal)
   }
 
   async *generate(req: GenerationRequest, signal: AbortSignal): AsyncIterable<string> {

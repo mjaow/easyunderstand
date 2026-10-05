@@ -33,6 +33,7 @@ import { testVideoModel } from './video-model.js'
 import { pruneVideoCache } from '../core/video-cache.js'
 import { IS_MACOS, inputPermission, isAvailable, getLoadError } from './native/index.js'
 import { startClickWatcher, stopClickWatcher } from './clicks.js'
+import { startLlmConnectionWarmup, warmLlmConnection } from './llm-connection.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
 
@@ -110,6 +111,8 @@ if (VERIFY_CAPTURE) {
 }
 
 function main(): void {
+  const stopConnectionWarmup = startLlmConnectionWarmup(loadConfig)
+  app.on('before-quit', stopConnectionWarmup)
   const cleanVideoCache = (): void => pruneVideoCache(join(app.getPath('userData'), 'video-cache'))
   cleanVideoCache()
   const videoCacheCleanup = setInterval(cleanVideoCache, 60 * 60 * 1000)
@@ -427,6 +430,7 @@ function registerIpc(): void {
     applyHotkeys(false)
     applyClickWatcher()
     applyLoginItem(saved.launchAtLogin)
+    warmLlmConnection(saved)
     // Re-read: applyHotkeys may have reassigned a conflicting shortcut and saved
     // again, and Settings must show what is actually bound, not what was requested.
     return loadConfig()
