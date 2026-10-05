@@ -346,6 +346,10 @@ OpenAI SDK appends `/chat/completions`, so an OpenAI-style base URL must already
 For **Azure OpenAI — GPT-6 Luna**, enter your deployment name and the full endpoint
 ending in `/openai/responses?api-version=…`, then save the Azure resource key.
 This provider uses Azure `api-key` authentication and reasoning effort `none`.
+The desktop app prepares an Azure connection at startup, when settings change, and
+every 30 seconds while running, without sending a prompt or making a model request.
+Short text requests use the standard output allowance without extra reasoning-token
+headroom; code and selections of 1,000 characters or more keep the larger allowance.
 Set **Model for code explanations** to the deployment name too, or leave it empty
 to use the everyday model. Its encrypted Azure key is separate from OpenAI-compatible
 providers and YouTube analysis. **Test connection** checks the configured deployments;
