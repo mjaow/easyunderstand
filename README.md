@@ -12,6 +12,7 @@ along the way.
 | What you want to understand | What you get |
 |---|---|
 | Words and passages | Plain English and Chinese explanations, common or contextual meanings, examples, dictionary pronunciation, and read-aloud. |
+| Your writing | Clearer spelling, grammar, wording, structure, and flow in the original language. |
 | Code | Its purpose, step-by-step reasoning, design choices, and possible bugs or edge cases in the selected snippet. |
 | YouTube videos | The core argument and takeaways first, concise breakdowns with timestamp sources, and a separate assessment of the evidence and reasoning. |
 
@@ -44,6 +45,25 @@ translation, and vocabulary together.*
 
 The selection popup does not take focus, and text capture restores your clipboard.
 See [How it works](#how-it-works) for the supported capture paths and their limits.
+
+### Refine writing in the same language
+
+Select text in an **editable textbox** (a draft email, chat, or document) or
+**read-only content**, then press **`Ctrl+Alt+R`** on Windows or **`⌘⌥R`** on macOS.
+The popup improves spelling, grammar, word choice, sentence structure, and logical
+flow while keeping your meaning. English stays English; Chinese stays Chinese,
+including Simplified or Traditional characters. Mixed-language text keeps its languages.
+
+Click **Copy refined text**, then paste it into any editable field. The source text
+stays in place and capture restores your clipboard. Refinement uses your existing
+**Explanations** model and key. Change either shortcut under **Settings → Hotkeys**;
+if a shortcut is taken, the app chooses and saves an available alternative.
+
+Cloud refinement automatically retries once if no text arrives for five seconds
+or a response stops progressing for five seconds. It shows **Connection is slow.
+Retrying…** and keeps the original selection. Azure desktop lookups use Electron’s
+browser networking, and Copy becomes available as soon as Azure confirms completion.
+The recovery request can incur an additional API charge; no new setting is needed.
 
 ### Translate YouTube captions and transcript lines
 
@@ -87,6 +107,14 @@ purpose from the title and description, and uses the complete transcript to labe
 form is required. Click a timestamp or **Next focus section** to navigate. Planning
 uses the same video model and key, including an existing Azure OpenAI GPT-6 Luna
 deployment.
+
+Some browsers close the entire sidebar when a YouTube video enters fullscreen.
+After exiting, click **Return to plan** or **Plan watch** to restore the completed
+plan, expanded sections, and scroll position without another capture or model
+request. **Plan again** inside the sidebar deliberately generates a fresh plan.
+The view is retained for the current browser session and discarded when that tab
+changes videos, closes, or you clear the cache. Browsers require a user gesture to
+reopen the sidebar, so exiting fullscreen alone cannot reliably reopen it.
 
 ![YouTube with the Understand video button below the player and an arrow pointing to the EasyUnderstand summary in the browser side panel.](docs/images/youtube-understand-video-masked.png)
 
@@ -226,10 +254,12 @@ Settings opens by itself the first time, since nothing works until step 1 is don
 | Gesture | Result |
 |---|---|
 | Select text, press `Ctrl+Alt+E` (`⌘⌥E`) | Explain the selection |
+| Select text, press `Ctrl+Alt+R` (`⌘⌥R`) | Refine writing in its original language |
 | Double-click a YouTube caption exposed by the page | Explain the current caption |
 | Double-click a line in the YouTube transcript panel | Explain that line |
 | `Esc`, or the shortcut again | Close the popup |
 | Select any words in the popup | Copies them — selecting *is* the copy |
+| Click **Copy refined text** | Copy the complete refinement, ready to paste |
 
 - **Three words or fewer** are treated as a term: dictionary IPA when available,
   part of speech, common meanings when selected alone or the relevant meaning when
@@ -247,8 +277,13 @@ Settings opens by itself the first time, since nothing works until step 1 is don
   than everyday lookups use, since design and bug reasoning is where that pays off.
 - **🔊** reads it aloud, **🐢** reads it slowly, **⏹** stops.
 - **Drag across anything in the popup to copy it.** Double-click a word, or sweep a
-  phrase; it goes on the clipboard the moment you let go, and the popup says what it
-  took. There is no ⌘C to press and no copy button, for a reason worth knowing — see
+  phrase; it goes on the clipboard when you let go. Refinement also has a **Copy
+  refined text** button. **Try another version** requests different wording from
+  the original selection, keeping its meaning and language. No configuration is
+  needed; each click requests a fresh result. A failed retry keeps the previous
+  complete version available. Every copy shows **Copying…**, then **Copied to clipboard**
+  or **Copy failed**. The result stays visible at the bottom while you scroll, until
+  the next copy, lookup, or close. No copy shortcut is needed — see
   [How it works](#how-it-works).
 
 The double-click needs no shortcut. Words come only from captions or transcript
@@ -271,52 +306,30 @@ candidates prevent invented IPA, but a model can still select the wrong valid
 variant. Existing answers with model-generated IPA are refreshed on the next lookup
 after this update.
 
-**Words the bundled wordlist does not have.** CMU's is from the 1990s and covers
-little derived or technical vocabulary — no **reproducible**, no **maintainable**, no
-**idempotent**.
+**Words the bundled wordlist does not have.** On **macOS**, the app also queries
+Dictionary Services, which uses the user's enabled dictionaries. When it returns a
+compatible New Oxford American Dictionary (NOAD) entry, the app converts its
+respelling to IPA. For example, **reproducible** can show **/ˌɹipɹəˈdusəbəɫ/**.
+Availability depends on the dictionaries installed and enabled in Dictionary.app.
+The lookup is offline and needs no API key or additional permission.
 
-On **macOS** those words are looked up in the dictionary the system already ships, the
-New Oxford American Dictionary, through Dictionary Services in CoreServices. It is the
-same dictionary behind Dictionary.app and the Look Up menu: offline, no API key, no new
-dependency, and no permission to grant. So **reproducible** shows
-**/ˌɹipɹəˈdusəbəɫ/** with nothing to configure. The bundled wordlist still wins wherever
-it has an entry, so **read** keeps both of its pronunciations.
+The converter requires an exact headword match, including entries in a base word's
+DERIVATIVES list, and rejects unsupported respellings. It uses the first listed
+pronunciation. Hovering over the IPA identifies a converted macOS dictionary entry
+separately from a bundled CMU entry. The bundled wordlist always takes precedence,
+so **read** keeps its existing alternatives. Native lookups, including misses, are
+cached in memory to avoid repeating them while an answer streams. Restart the app
+after changing the enabled system dictionaries to clear that cache.
 
-NOAD writes pronunciations in its own respelling rather than IPA
-(`ˌrēprəˈdo͞osəb(ə)l`), which is a closed set of 56 symbols, so the conversion is a
-lookup table and not a guess — and it is checked three ways. Anything that does not
-convert completely is discarded, because a stray `ē` reaching the popup would be worse
-than no pronunciation. The word must match the entry exactly: a lookup for
-**maintainable** returns the entry for **maintain**, and showing that pronunciation
-would be plainly wrong, so it is instead found under its own name in that entry's
-DERIVATIVES list. And an entry with no pronunciation at all is refused rather than
-allowed to leak definition prose. Measured against 817 real respellings from the
-dictionary on a Mac, 816 converted with no leftover symbol; the one rejection was an
-entry that had no pronunciation.
+**Where neither dictionary has the word.** Settings → *Show an unverified
+pronunciation for words the dictionary lacks* lets the model supply IPA, shown
+dimmed and marked with a degree sign (**°**). It is **off by default** because these
+readings can be wrong. When enabled, an available dictionary stem may help the
+model transcribe an unfamiliar word; it does not verify the result. When disabled,
+the model is asked only to select supplied dictionary candidates.
 
-The two dictionaries follow different traditions, so they disagree on words both have —
-NOAD reduces unstressed vowels (**abhor** /əbˈhɔɹ/ against CMU's /æbˈhɔɹ/) and writes a
-flapped *t* as *d*. Both are accurate; they are never consulted for the same word.
-
-**Where neither has the word.** Settings → *Show an unverified pronunciation for words
-the dictionary lacks* turns the remaining blanks into the model's own reading, shown
-dimmed and marked with a degree sign (**°**) so it can never be mistaken for an
-attested one. It is **off by default**, and that is a measurement rather than caution:
-asked for six such words a cheap model got about half wrong, even when given the
-nearest attested stem to work from, and half-wrong IPA is worse than none for a reader
-who cannot tell which half. A stronger model may do better — the switch is there so you
-can judge for yourself. 🔊 says the word correctly either way.
-
-On **Windows** the bundled wordlist is the only attested source; there is no system
-dictionary to fall back on, so that switch matters more there.
-
-Two other approaches were measured and rejected. A larger wordlist does not help:
-upstream CMUdict (135,166 entries) lacks all of these words too, and Wiktionary has no
-IPA for **reproducible** either, because a word built from parts gets left out of
-hand-written dictionaries. Composing one from the stem plus the suffix's own phonemes
-is worse — checked against every `-able`, `-ible`, `-ly` and `-ness` word the wordlist
-*does* have, it agrees only 46–74% of the time, because `-able` moves the stress in
-**comparable** and **preferable** and leaves it alone in **deployable**.
+On **Windows**, the app continues to use the bundled wordlist and does not load
+macOS dictionary frameworks. The optional unverified setting works on both platforms.
 
 The speaker button reads the original text using your configured voice, separately
 from the displayed IPA. Changing pronunciation data does not change your explanation
@@ -365,6 +378,10 @@ OpenAI SDK appends `/chat/completions`, so an OpenAI-style base URL must already
 For **Azure OpenAI — GPT-6 Luna**, enter your deployment name and the full endpoint
 ending in `/openai/responses?api-version=…`, then save the Azure resource key.
 This provider uses Azure `api-key` authentication and reasoning effort `none`.
+The desktop app prepares an Azure connection at startup, when settings change, and
+every 30 seconds while running, without sending a prompt or making a model request.
+Short text requests use the standard output allowance without extra reasoning-token
+headroom; code and selections of 1,000 characters or more keep the larger allowance.
 Set **Model for code explanations** to the deployment name too, or leave it empty
 to use the everyday model. Its encrypted Azure key is separate from OpenAI-compatible
 providers and YouTube analysis. **Test connection** checks the configured deployments;
@@ -466,12 +483,20 @@ npm run verify:capture # end-to-end capture: reads the selection, restores the c
 npm run verify:hotkeys # clipboard shortcuts refused, conflicts fall back, availability check is honest
 npm run verify:click   # real OS double-clicks on a YouTube-shaped page come back as the right lines
 npm run verify:code    # asks the configured model: snippets come back as code, prose as prose
+npm run verify:refine  # asks the configured model: English, Chinese, and mixed-language editing
 npm run probe:hotkeys  # which shortcuts are free on this machine
 ```
 
 Every one of these runs on both platforms and exercises that platform's own layer —
 `verify:capture` posts a real `Ctrl+C` or `⌘C`, `verify:click` sends real OS mouse
 clicks and reads the real accessibility tree, `verify:code` asks the configured model.
+`verify:click` also checks caption and transcript capture on every connected display,
+including monitors with different scaling and negative screen coordinates.
+On Windows, `npm test` also runs the real caption reader in both DPI-unaware and
+system-DPI-aware PowerShell hosts and checks its DPI mode through Windows APIs.
+That regression check needs no second monitor and does not move the pointer or
+open a window. Keep the multi-monitor `verify:click` check for actual hit testing;
+the DPI check alone cannot validate which caption is captured.
 
 `verify:capture` may need you to **click its test window** when it appears: Windows
 will not let a terminal-launched app focus itself at all, and macOS occasionally loses
@@ -532,8 +557,8 @@ both free.
    listeners. The optional YouTube companion separately adds its own button and
    reads caption data, without borrowing the clipboard or handling selection clicks.
 2. A capture always restores the clipboard, every format, typically within ~150ms.
-   Selecting text in the popup explicitly replaces the clipboard with the selected
-   text and leaves it written.
+   Selecting text in the popup or clicking **Copy refined text** explicitly replaces
+   the clipboard with that text and leaves it written.
 3. The popup never takes focus, and that is checked rather than assumed. Electron's
    `focusable: false` is
    [unreliable on Windows](https://github.com/electron/electron/issues/11049), so there

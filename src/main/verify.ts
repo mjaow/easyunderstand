@@ -7,13 +7,14 @@
  *
  * Loaded dynamically from a CLI flag, so none of this ships in the normal startup path.
  */
-import { app, BrowserWindow, clipboard } from 'electron'
+import { app, BrowserWindow, clipboard, ClipboardItem, globalShortcut, Menu } from 'electron'
 import koffi from 'koffi'
 import { captureSelection } from './capture.js'
 import { IS_MACOS, foregroundWindowTitle, getLoadError, isAvailable, inputPermission } from './native/index.js'
 import { foregroundWindow } from './native/win32.js'
 import { describeFocusedApp } from './native/macos.js'
 import { objc } from './native/objc.js'
+import type { CaptureResult } from '../shared/types.js'
 
 const SELECTION = 'He is just grandstanding for the base.'
 
@@ -38,6 +39,11 @@ function log(pass: boolean, label: string, detail = ''): boolean {
  * are reading, so the foreground window is correct by definition.
  */
 function forceForeground(win: BrowserWindow): void {
+  if (foregroundIsOurs()) {
+    win.focus()
+    win.webContents.focus()
+    return
+  }
   if (IS_MACOS) {
     app.focus({ steal: true })
     win.focus()
@@ -253,6 +259,12 @@ export async function runCaptureVerification(): Promise<void> {
     alwaysOnTop: true,
     webPreferences: { nodeIntegration: false, contextIsolation: true }
   })
+  // Keep a real menu: removing it hid the bug where releasing Alt activated the
+  // menu and swallowed Ctrl+C, as it did in Notepad.
+  if (!IS_MACOS) win.setMenu(Menu.buildFromTemplate([
+    { label: 'File', submenu: [{ label: 'Test document' }] },
+    { role: 'editMenu' }
+  ]))
 
   // A textarea is the closest stand-in for "a real app with a real selection".
   await win.loadURL(
@@ -291,6 +303,11 @@ export async function runCaptureVerification(): Promise<void> {
 
   // A distinctive sentinel proves the restore put back OUR value, not merely
   // something that happens to look plausible.
+  const originalClipboard = await Promise.all((await clipboard.read()).map(async item =>
+    new ClipboardItem(Object.fromEntries(await Promise.all(item.types.map(async type =>
+      [type, await item.getType(type)] as const
+    ))))
+  ))
   const sentinel = `clipboard-sentinel-${Date.now()}`
   await clipboard.writeText(sentinel)
   await sleep(100)
@@ -312,6 +329,8 @@ export async function runCaptureVerification(): Promise<void> {
     ok
 
   // The real conditions: the hotkey has just fired, so the modifiers are still down.
+  forceForeground(win)
+  win.webContents.focus()
   await win.webContents.executeJavaScript(
     `(() => { const t = document.getElementById('t'); t.focus(); t.select(); return t.value.length })()`
   )
@@ -333,7 +352,85 @@ export async function runCaptureVerification(): Promise<void> {
       held.ok ? `${held.elapsedMs}ms` : held.reason
     ) && ok
 
+  // Refine must capture drafts and read-only selections through exactly the same
+  // native copy path. Exercise the real browser controls, including partial ranges.
+  const matrix = [
+    { label: 'editable input', html: '<input id="t">', range: false },
+    { label: 'read-only input', html: '<input id="t" readonly>', range: false },
+    { label: 'editable textarea', html: '<textarea id="t"></textarea>', range: false },
+    { label: 'read-only textarea', html: '<textarea id="t" readonly></textarea>', range: false },
+    { label: 'rich text editor', html: '<div id="t" contenteditable="true"></div>', range: true },
+    { label: 'read-only text', html: '<div id="t"></div>', range: true }
+  ]
+  const selected = '这个 API 的用词需要改善。 I has a question.'
+  const source = `Before. ${selected} After.`
+  for (const item of matrix) {
+    forceForeground(win)
+    win.webContents.focus()
+    await win.webContents.executeJavaScript(`(() => {
+      document.body.innerHTML = ${JSON.stringify(item.html)};
+      const t = document.getElementById('t');
+      t.style.cssText = 'font:16px system-ui; width:100%; white-space:pre-wrap';
+      const source = ${JSON.stringify(source)};
+      if (${item.range}) {
+        t.textContent = source;
+        t.focus();
+        const range = document.createRange();
+        range.setStart(t.firstChild, 8);
+        range.setEnd(t.firstChild, ${8 + selected.length});
+        window.getSelection().removeAllRanges();
+        window.getSelection().addRange(range);
+      } else {
+        t.value = source;
+        t.focus();
+        t.setSelectionRange(8, ${8 + selected.length});
+      }
+    })()`)
+    await sleep(150)
+    const captured = IS_MACOS ? await captureSelection() : await captureFromWindowsHotkey()
+    const unchanged = await win.webContents.executeJavaScript(`(() => {
+      const t = document.getElementById('t');
+      return (t.value ?? t.textContent) === ${JSON.stringify(source)};
+    })()`)
+    ok = log(captured.ok && captured.raw === selected, `${item.label}: selected text captured${IS_MACOS ? '' : ' through global hotkey with menu present'}`, captured.ok ? '' : `${captured.reason}; foreground: ${foregroundTitle()}`) && ok
+    ok = log(unchanged && await clipboard.readText() === sentinel, `${item.label}: source and clipboard preserved`) && ok
+  }
+
+  if (originalClipboard.length) await clipboard.write(originalClipboard)
+  else clipboard.clear()
+
   console.log(`\n${ok ? 'All capture checks passed.' : 'Capture checks FAILED.'}\n`)
   win.destroy()
   app.exit(ok ? 0 : 1)
+}
+
+/** Same Ctrl+Alt modifiers as refinement, with a test key the running app does not own. */
+async function captureFromWindowsHotkey(): Promise<CaptureResult> {
+  const accelerator = 'Control+Alt+F11'
+  let finish!: (result: CaptureResult) => void
+  const captured = new Promise<CaptureResult>(resolve => { finish = resolve })
+  if (!globalShortcut.register(accelerator, () => void captureSelection().then(finish))) {
+    throw new Error(`Cannot verify capture: ${accelerator} is already in use.`)
+  }
+  const key = koffi.load('user32.dll').func(
+    'void __stdcall keybd_event(uint8 bVk, uint8 bScan, uint32 dwFlags, uintptr dwExtraInfo)'
+  )
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    key(0x11, 0, 0, 0) // Control
+    key(0x12, 0, 0, 0) // Alt
+    key(0x7a, 0, 0, 0) // F11; leave all three held, as a user does during the callback.
+    return await Promise.race([
+      captured,
+      new Promise<CaptureResult>((_, reject) => {
+        timer = setTimeout(() => reject(new Error('The capture hotkey did not finish.')), 5000)
+      })
+    ])
+  } finally {
+    clearTimeout(timer)
+    key(0x7a, 0, 2, 0)
+    key(0x12, 0, 2, 0)
+    key(0x11, 0, 2, 0)
+    globalShortcut.unregister(accelerator)
+  }
 }

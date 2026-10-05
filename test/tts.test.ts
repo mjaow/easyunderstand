@@ -11,9 +11,9 @@ const TEXT = 'He is just grandstanding for the base.'
 
 function cfg(provider: TtsProviderId): AppConfig {
   return {
-    hotkeys: { explain: '' },
+    hotkeys: { explain: '', refine: '' },
     doubleClickTranscripts: true,
-  unverifiedPronunciations: false,
+    unverifiedPronunciations: false,
     llm: { provider: 'ollama', models: {}, baseUrls: {}, codeModel: '', videoModel: '' },
     tts: {
       provider,

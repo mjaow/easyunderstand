@@ -13,10 +13,8 @@ import koffi from 'koffi'
 
 const kCFStringEncodingUTF8 = 0x08000100
 
-/** Definitions are long; this is only ever read far enough to find the pronunciation. */
-const MAX_DEFINITION_BYTES = 4096
-
-const CFRange = koffi.struct('DCSCFRange', { location: 'int64', length: 'int64' })
+/** Bound native output while allowing long entries with derivatives at the end. */
+const MAX_DEFINITION_LENGTH = 1_000_000
 
 interface Bindings {
   copyTextDefinition: (dictionary: unknown, text: unknown, range: unknown) => unknown
@@ -34,6 +32,7 @@ function load(): Bindings | null {
   attempted = true
   if (process.platform !== 'darwin') return null
   try {
+    const CFRange = koffi.struct('DCSCFRange', { location: 'int64', length: 'int64' })
     const services = koffi.load('/System/Library/Frameworks/CoreServices.framework/CoreServices')
     const cf = koffi.load('/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation')
     bindings = {
@@ -66,8 +65,8 @@ export function systemDefinition(word: string): string | null {
   const b = load()
   if (!b) return null
   // One line, no control characters: this is a lookup key, not free text.
-  const term = word.trim().slice(0, 120)
-  if (!term || /[\u0000-\u001f]/.test(term)) return null
+  const term = word.trim()
+  if (!term || term.length > 120 || /[\u0000-\u001f\u007f]/.test(term)) return null
 
   let text: unknown = null
   let definition: unknown = null
@@ -80,12 +79,16 @@ export function systemDefinition(word: string): string | null {
     })
     if (!definition) return null
 
-    const buffer = Buffer.alloc(MAX_DEFINITION_BYTES)
-    if (!b.stringGetCString(definition, buffer, MAX_DEFINITION_BYTES, kCFStringEncodingUTF8)) {
+    const length = Number(b.stringGetLength(definition))
+    if (!Number.isSafeInteger(length) || length < 0 || length > MAX_DEFINITION_LENGTH) return null
+    // CFStringGetCString fails unless the ENTIRE string fits. Each UTF-16 code
+    // unit needs at most three UTF-8 bytes, plus one byte for the terminator.
+    const buffer = Buffer.alloc(length * 3 + 1)
+    if (!b.stringGetCString(definition, buffer, buffer.length, kCFStringEncodingUTF8)) {
       return null
     }
     const end = buffer.indexOf(0)
-    return buffer.toString('utf8', 0, end < 0 ? MAX_DEFINITION_BYTES : end)
+    return end < 0 ? null : buffer.toString('utf8', 0, end)
   } catch (err) {
     console.error('[dictionary] lookup failed:', err)
     return null

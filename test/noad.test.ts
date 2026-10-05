@@ -1,12 +1,4 @@
-/**
- * The system dictionary's respelling, turned into IPA.
- *
- * macOS ships the New Oxford American Dictionary, which has the words CMU's wordlist
- * does not — "reproducible" among them. It writes pronunciations in its own respelling,
- * a closed set of 56 symbols, so this is a lookup table rather than a guess. Checked
- * against 816 real respellings taken from the dictionary on a Mac, every one converted
- * without a leftover symbol; the fixtures below are a spread of those.
- */
+/** NOAD respelling fixtures, including derived entries and unsupported input. */
 import { describe, it, expect } from 'vitest'
 import { ipaFromDefinition, respellingFor, respellingToIpa } from '../src/core/noad.js'
 
@@ -66,6 +58,9 @@ describe('finding the respelling in a definition', () => {
     expect(respellingFor('maintainable', maintain)).toBeUndefined()
     expect(ipaFromDefinition('maintainable', maintain)).toBeUndefined()
     expect(respellingFor('maintain', maintain)).toBe('mānˈtān')
+    // A match must not start partway through a non-ASCII or numbered headword.
+    expect(ipaFromDefinition('reproducible', '2reproducible | ˌrēprəˈdo͞osəb(ə)l |')).toBeUndefined()
+    expect(ipaFromDefinition('reproducible', 'éreproducible | ˌrēprəˈdo͞osəb(ə)l |')).toBeUndefined()
   })
 
   it('finds a word listed as a derivative of another entry', () => {

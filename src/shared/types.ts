@@ -1,7 +1,7 @@
 /** Types shared across main, preload and renderer. Keep this dependency-free. */
 
 /** Bump when new Settings require handlers unavailable in older background apps. */
-export const SETTINGS_API_VERSION = 3
+export const SETTINGS_API_VERSION = 4
 
 // ---------------------------------------------------------------- capture
 
@@ -26,9 +26,10 @@ export type CaptureResult =
  * WORD explains a single term *inside* a sentence; PASSAGE explains a whole selection.
  * Both are chosen from selection length. CODE explains a snippet of source code, and
  * is never chosen here: the model flags a selection as code in its ordinary answer,
- * the popup offers a button, and the click asks for CODE as a second step.
+ * the popup offers a button, and the click asks for CODE as a second step. REFINE
+ * is explicitly requested with its own hotkey and preserves the source language.
  */
-export type ExplainMode = 'word' | 'passage' | 'code'
+export type ExplainMode = 'word' | 'passage' | 'code' | 'refine'
 
 export interface PronunciationCandidate {
   ipa: string
@@ -51,12 +52,16 @@ export interface ExplainRequest {
    * sees, so a snippet of code reaches it intact rather than hard-wrap-collapsed.
    */
   raw?: string
+  /** REFINE retry: wording to avoid repeating; the original remains the source. */
+  previousRefinement?: string
   /** The surrounding sentence, when the capture source supplies one. */
   context?: string
   /** Local dictionary candidates supplied to the model for contextual selection. */
   pronunciationHints?: Record<string, readonly PronunciationCandidate[]>
   /** Set only when the selection itself is absent from the dictionary. */
   pronunciationAnchor?: PronunciationAnchor
+  /** Explicit opt-in to ask for model-generated IPA when no candidate is supplied. */
+  allowUnverifiedPronunciations?: boolean
 }
 
 /**
@@ -64,6 +69,8 @@ export interface ExplainRequest {
  * Kept flat and optional so a half-arrived response still renders.
  */
 export interface Explanation {
+  /** REFINE only: improved text in the original language, ready to copy. */
+  refined?: string
   /** Natural Chinese rendering. */
   zh?: string
   /** The same thing in plainer English. */
@@ -73,16 +80,12 @@ export interface Explanation {
   /**
    * Terms whose shown IPA is the model's reading rather than a dictionary entry.
    *
-   * The bundled CMU wordlist is conservative — it has no entry for "reproducible",
-   * and neither does Wiktionary, because a word built from parts gets left out of
-   * hand-written dictionaries. Showing nothing taught the reader nothing; showing a
-   * guess as though it were attested would be worse. So an unattested pronunciation
-   * is shown and labelled, and this is the list of terms it applies to.
-   *
    * Holds display terms exactly as `ipa` and `notable` spell them, so the popup can
    * match without needing the dictionary in the renderer bundle.
    */
   unverifiedIpa?: string[]
+  /** Display terms whose IPA was converted from the macOS dictionary's respelling. */
+  systemDictionaryIpa?: string[]
   /** WORD only: part of speech. */
   pos?: string
   /** Why it means that *here*, given the context. */
@@ -129,6 +132,12 @@ export interface ExplainState {
   model?: string
   /** True when the answer came from the cache rather than a fresh request. */
   cached?: boolean
+  /** Identifies a new refinement attempt, including retries of the same selection. */
+  refineAttempt?: number
+  /** A retry failed; the previous complete refinement is still displayed. */
+  refineRetryError?: string
+  /** A stalled refinement is being retried automatically. */
+  refineProgress?: string
 }
 
 // ---------------------------------------------------------------- config
@@ -149,18 +158,14 @@ export interface AppConfig {
   hotkeys: {
     /** Capture the selection and explain it. The popup handles read-aloud. */
     explain: string
+    /** Improve selected writing without translating it. */
+    refine: string
   }
   /** Double-clicking a line in a YouTube transcript explains it — no shortcut at all. */
   doubleClickTranscripts: boolean
   /**
-   * Show a pronunciation for words the bundled dictionary has no entry for, taken
-   * from the model and labelled as unverified.
-   *
-   * Off by default, and that is a measurement rather than caution: asked for six
-   * words the wordlist lacks, qwen-flash got three right even when anchored to the
-   * attested stem. Half-wrong IPA is worse than none for a reader who cannot tell
-   * which half, and 🔊 already says the word correctly. A stronger model may do
-   * better, which is why this is a switch and not a deletion.
+   * Allow model-generated IPA when neither dictionary supplies a pronunciation.
+   * Off by default; displayed readings are explicitly marked as unverified.
    */
   unverifiedPronunciations: boolean
   llm: {
@@ -219,6 +224,8 @@ export const IPC = {
   popupClose: 'popup:close',
   /** popup → main: explain the current selection as code */
   popupExplainCode: 'popup:explain-code',
+  /** popup → main: request a fresh refinement of the original selection */
+  popupRefineAgain: 'popup:refine-again',
   /**
    * popup → main: put what the user selected in the popup on the clipboard.
    *

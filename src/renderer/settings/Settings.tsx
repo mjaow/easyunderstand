@@ -496,6 +496,17 @@ export function Settings(): React.ReactElement {
           value={config.hotkeys.explain}
           onCommit={(v) => patch({ hotkeys: { ...config.hotkeys, explain: v } })}
         />
+        <HotkeyRecorder
+          label="Refine selection"
+          value={config.hotkeys.refine}
+          onCommit={(v) => patch({ hotkeys: { ...config.hotkeys, refine: v } })}
+        />
+        <p className="text-[11px] leading-snug" style={{ color: 'var(--text-subtle)' }}>
+          Refine improves spelling, grammar, wording, and structure in the original language.
+          Select text in an editable textbox or read-only content, then use the refinement
+          shortcut. Copy the result from the popup and paste it where you need it.
+          Uses the model configured under Explanations.
+        </p>
 
         <label className="flex items-center gap-2 text-[13px]">
           <input
@@ -507,7 +518,7 @@ export function Settings(): React.ReactElement {
         </label>
         <p className="text-[11px] leading-snug" style={{ color: 'var(--text-subtle)' }}>
           Ctrl+C, Ctrl+V and Ctrl+X can never be bound — EasyUnderstand will not be the reason a
-          copy or paste stops working. If a shortcut you pick is already owned by another app,
+          copy or paste stops working. If a shortcut you pick is already used by another action or app,
           EasyUnderstand moves to a free one rather than leaving you with nothing.
         </p>
       </Card>
@@ -644,12 +655,10 @@ export function Settings(): React.ReactElement {
           <span>
             Show an unverified pronunciation for words the dictionary lacks
             <span className="mt-0.5 block text-[11px] leading-snug" style={{ color: 'var(--text-subtle)' }}>
-              The bundled CMU wordlist has no entry for much derived vocabulary —
-              “reproducible”, “maintainable”, “idempotent” — so those words normally show no
-              IPA at all. Switch this on and the model supplies one, shown dimmed and marked
-              with a degree sign. Worth knowing before you do: asked for six such words, the
-              cheap models got about half wrong. 🔊 always says the word correctly, whatever
-              this is set to.
+              When the bundled dictionary and macOS dictionary fallback have no pronunciation,
+              let the model supply one. These readings can be wrong and appear dimmed with
+              a degree sign (°). Off by default. Read-aloud uses your configured voice
+              independently of this setting.
             </span>
           </span>
         </label>

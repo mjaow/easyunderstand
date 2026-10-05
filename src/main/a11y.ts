@@ -57,7 +57,7 @@ export async function readPoint(x: number, y: number): Promise<PointRead | null>
         String(Math.round(x)),
         String(Math.round(y))
       ],
-      { timeout: TIMEOUT_MS, encoding: 'utf8', maxBuffer: 1024 * 1024 },
+      { timeout: TIMEOUT_MS, encoding: 'utf8', maxBuffer: 1024 * 1024, windowsHide: true },
       (err, stdout) => resolve(err ? null : parsePointRead(stdout ?? ''))
     )
   })

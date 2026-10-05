@@ -33,10 +33,11 @@ app.whenReady().then(async () => {
     window.chrome = {
       windows: { getCurrent: async () => ({id:1}) },
       storage: { session: {
-        get: async () => state.stored,
-        set: async values => { Object.assign(state.stored, values) }
+        get: async () => structuredClone(state.stored),
+        set: async values => { Object.assign(state.stored, structuredClone(values)) },
+        remove: async keys => { for (const key of [keys].flat()) delete state.stored[key] }
       }, onChanged: { addListener: f => state.onChange = f } },
-      tabs: { query: async () => [] },
+      tabs: { query: async () => [], onUpdated: {addListener: f => state.onUpdated = f}, onRemoved: {addListener: f => state.onRemoved = f} },
       scripting: { executeScript: async options => {
         if (options.args?.length === 1) return [{result:state.wrongVideo ? null : state.currentTime ?? 0}];
         if (options.args?.length === 2) {state.seek=options.args;return [{result:!state.wrongVideo}]}
@@ -388,6 +389,24 @@ app.whenReady().then(async () => {
   assert.equal(await read('fixtureState.requests.at(-1).fresh'), true)
   assert.equal(await total(), summaryClock, 'planning preserves the completed summary clock')
   assert.equal(await read('document.getElementById("error").hidden'), true)
+  const retained = await read(`
+    fixtureState.originalTarget = fixtureState.stored['target:1'];
+    fixtureState.originalPlan = document.getElementById('watch-result');
+    document.querySelector('.watch-focus details').open = true;
+    window.scrollTo(0, 500);
+    ({scroll:window.scrollY,requests:fixtureState.requests.length})
+  `)
+  assert.ok(retained.scroll > 0)
+  await read(`
+    fixtureState.onChange({'target:1':{newValue:{...fixtureState.originalTarget,tabId:3,videoId:null,start:false,token:'other-tab'}}},'session');
+    fixtureState.onChange({'target:99':{newValue:{...fixtureState.originalTarget,windowId:99}}},'session');
+    fixtureState.onChange({'target:1':{newValue:fixtureState.originalTarget}},'session');
+    new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))
+  `)
+  assert.equal(await read('document.getElementById("watch-result") === fixtureState.originalPlan'), true, 'tab return restores the original rendered plan')
+  assert.equal(await read('document.querySelector(".watch-focus details").open'), true, 'expanded sections survive tab switching')
+  assert.equal(await read('window.scrollY'), retained.scroll, 'scroll position survives tab switching')
+  assert.equal(await read('fixtureState.requests.length'), retained.requests, 'tab switching does not request another plan')
   await read('window.scrollTo(0,0);new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))')
   assert.equal(await read('document.documentElement.scrollWidth <= window.innerWidth'), true, 'watch plan fits the panel')
   mkdirSync('out/verification', {recursive:true})

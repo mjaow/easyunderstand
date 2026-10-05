@@ -18,9 +18,12 @@ import { registerHotkeys, unregisterHotkeys, bindingsFor, checkAvailability } fr
 import {
   synthesize,
   toggleOrExplain,
+  toggleOrRefine,
+  cancelInFlight,
   flushCaches,
   explainClickedTranscript,
   explainLastAsCode,
+  refineAgain,
   copySelection
 } from './session.js'
 import { loadConfig, saveConfig, setSecret, hasSecret, getSecret } from '../core/config.js'
@@ -32,6 +35,7 @@ import { IS_MACOS, inputPermission, isAvailable, getLoadError } from './native/i
 import { startClickWatcher, stopClickWatcher } from './clicks.js'
 import { setSystemDictionary } from '../core/pronunciation.js'
 import { systemDefinition, systemDictionaryAvailable } from './native/dictionary-macos.js'
+import { startLlmConnectionWarmup, warmLlmConnection } from './llm-connection.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
 
@@ -61,6 +65,7 @@ const PROBE_HOTKEYS = process.argv.includes('--probe-hotkeys')
 const VERIFY_HOTKEYS = process.argv.includes('--verify-hotkeys')
 const VERIFY_CLICK = process.argv.includes('--verify-click')
 const VERIFY_CODE = process.argv.includes('--verify-code')
+const VERIFY_REFINE = process.argv.includes('--verify-refine')
 const VERIFY_SETTINGS = process.argv.includes('--verify-settings')
 
 if (VERIFY_CAPTURE) {
@@ -84,6 +89,11 @@ if (VERIFY_CAPTURE) {
     const { runCodeVerification } = await import('./verify-code.js')
     await runCodeVerification()
   })
+} else if (VERIFY_REFINE) {
+  void app.whenReady().then(async () => {
+    const { runRefineVerification } = await import('./verify-refine.js')
+    await runRefineVerification()
+  })
 } else if (PROBE_HOTKEYS) {
   void app.whenReady().then(async () => {
     const { runHotkeyProbe } = await import('./probe-hotkeys.js')
@@ -103,6 +113,8 @@ if (VERIFY_CAPTURE) {
 }
 
 function main(): void {
+  const stopConnectionWarmup = startLlmConnectionWarmup(loadConfig)
+  app.on('before-quit', stopConnectionWarmup)
   const cleanVideoCache = (): void => pruneVideoCache(join(app.getPath('userData'), 'video-cache'))
   cleanVideoCache()
   const videoCacheCleanup = setInterval(cleanVideoCache, 60 * 60 * 1000)
@@ -119,12 +131,10 @@ function main(): void {
   // and never takes focus off whatever the user is reading.
   if (IS_MACOS) app.dock?.hide()
 
-  // macOS ships a dictionary with the derived vocabulary CMU's wordlist misses, so
-  // offer it as a second attested source. Registered here because it is a native
-  // binding and core must not import one.
+  // Register the optional native dictionary without coupling core to native bindings.
   if (systemDictionaryAvailable()) setSystemDictionary(systemDefinition)
 
-  createPopupWindow(preloadPath())
+  createPopupWindow(preloadPath()).on('hide', cancelInFlight)
   createTray()
   registerIpc()
 
@@ -234,14 +244,17 @@ function applyHotkeys(announce = true): void {
 
   const config = loadConfig()
   const result = registerHotkeys(
-    bindingsFor(config, { explain: toggleOrExplain })
+    bindingsFor(config, { explain: toggleOrExplain, refine: toggleOrRefine })
   )
 
   // A reassignment is only useful if it sticks, so persist what actually bound —
   // otherwise the same conflict would be rediscovered on every launch.
-  const { explain } = result.resolved
-  if (explain && explain !== config.hotkeys.explain) {
-    saveConfig({ hotkeys: { explain } })
+  const { explain, refine } = result.resolved
+  if ((explain && explain !== config.hotkeys.explain) || (refine && refine !== config.hotkeys.refine)) {
+    saveConfig({ hotkeys: {
+      explain: explain || config.hotkeys.explain,
+      refine: refine || config.hotkeys.refine
+    } })
   }
 
   refreshTrayMenu()
@@ -317,6 +330,7 @@ function refreshTrayMenu(): void {
   tray.setContextMenu(
     Menu.buildFromTemplate([
       { label: `Explain selection  (${config.hotkeys.explain})`, click: () => toggleOrExplain() },
+      { label: `Refine selection  (${config.hotkeys.refine})`, click: () => toggleOrRefine() },
       { type: 'separator' },
       {
         label: 'Pause',
@@ -382,6 +396,7 @@ function openSettings(): void {
 function registerIpc(): void {
   ipcMain.on(IPC.popupClose, () => hidePopup())
   ipcMain.on(IPC.popupExplainCode, () => void explainLastAsCode())
+  ipcMain.on(IPC.popupRefineAgain, () => void refineAgain())
 
   ipcMain.handle(IPC.popupCopySelection, (_e, text: unknown) =>
     copySelection(typeof text === 'string' ? text : '')
@@ -420,6 +435,7 @@ function registerIpc(): void {
     applyHotkeys(false)
     applyClickWatcher()
     applyLoginItem(saved.launchAtLogin)
+    warmLlmConnection(saved)
     // Re-read: applyHotkeys may have reassigned a conflicting shortcut and saved
     // again, and Settings must show what is actually bound, not what was requested.
     return loadConfig()

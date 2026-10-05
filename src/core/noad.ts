@@ -1,10 +1,8 @@
 /**
  * Turning the system dictionary's respelling into IPA.
  *
- * macOS ships the New Oxford American Dictionary, and it has the words CMU's wordlist
- * does not: "reproducible", "idempotent", "onboarding". It writes pronunciations in
- * NOAD's own respelling rather than IPA — `ˌrēprəˈdo͞osəb(ə)l` — which is a closed set
- * of 56 symbols, so the conversion is a lookup table rather than a guess.
+ * Compatible New Oxford American Dictionary entries use respelling rather than
+ * IPA. The supported symbols are converted explicitly; unknown symbols are rejected.
  *
  * Pure, so the table can be tested without a Mac.
  *
@@ -109,7 +107,7 @@ export function respellingToIpa(respelling: string): string | undefined {
  * Both are read, because a lookup for "maintainable" returns the entry for "maintain",
  * where the word asked for is a derivative rather than the headword.
  */
-const PAIR = /([A-Za-z][A-Za-z'\u00b7-]*)\s*\|\s*([^|]+?)\s*\|/g
+const PAIR = /(?:^|\s)([A-Za-z][A-Za-z'\u00b7-]*)\s*\|\s*([^|]+?)\s*\|/g
 
 /**
  * The respelling for exactly `word`, or undefined.

@@ -16,7 +16,8 @@ export const LLM_PROVIDERS: { id: LlmProviderId; label: string; needsKey: boolea
 export function createLlmProvider(
   config: AppConfig,
   apiKey: string | null,
-  model = config.llm.models[config.llm.provider]
+  model = config.llm.models[config.llm.provider],
+  fetch?: typeof globalThis.fetch
 ): LlmProvider {
   const id = config.llm.provider
   const opts = {
@@ -30,7 +31,7 @@ export function createLlmProvider(
     case 'openai':
       return new OpenAiProvider(opts)
     case 'azure':
-      return new AzureResponsesProvider({ ...opts, reasoningEffort: 'none' })
+      return new AzureResponsesProvider({ ...opts, reasoningEffort: 'none', fetch })
     case 'ollama':
       return new OllamaProvider(opts)
     default: {

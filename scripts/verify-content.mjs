@@ -86,3 +86,59 @@ for (const action of ['understand', 'watch-plan']) for (const failure of ['none'
   dom.window.close()
 }
 console.log('Both YouTube buttons acknowledge opening, prevents duplicate clicks, shows retryable opening errors/timeouts, and reconnects missing or invalidated extension contexts.')
+
+for (const scenario of ['restore', 'dismiss', 'no-plan', 'changed-video', 'late-status', 'open-failed']) {
+  const dom = new JSDOM('<ytd-watch-metadata><div id="actions"></div></ytd-watch-metadata>', {
+    url: 'https://www.youtube.com/watch?v=B7yl7fEHeKM', runScripts: 'outside-only'
+  })
+  const w = dom.window, messages = []
+  let fullscreen = null, finishStatus, opens = 0
+  Object.defineProperty(w.document, 'fullscreenElement', { get: () => fullscreen })
+  w.chrome = { runtime: { id: 'fixture-extension', sendMessage: message => {
+    messages.push(message.action)
+    if (message.action === 'get-video-view') {
+      if (scenario === 'late-status') return new Promise(resolve => { finishStatus = resolve })
+      return Promise.resolve({ ok: true, action: scenario === 'no-plan' ? undefined : 'watch-plan' })
+    }
+    assert.equal(message.action, 'resume-video-view', 'returning must not request a fresh plan')
+    return Promise.resolve(scenario === 'open-failed' && ++opens === 1 ? { ok: false, error: 'Fixture opening error' } : { ok: true })
+  } } }
+  w.eval(code)
+  fullscreen = w.document.documentElement
+  w.document.dispatchEvent(new w.Event('fullscreenchange'))
+  assert.deepEqual(messages, [], 'entering fullscreen must not open the sidebar or start work')
+  if (scenario === 'changed-video') w.history.replaceState({}, '', '/watch?v=jNQXAC9IVRw')
+  fullscreen = null
+  w.document.dispatchEvent(new w.Event('fullscreenchange'))
+  if (scenario === 'late-status') {
+    w.history.replaceState({}, '', '/watch?v=jNQXAC9IVRw')
+    w.document.dispatchEvent(new w.Event('yt-navigate-finish'))
+    finishStatus({ ok: true, action: 'watch-plan' })
+  }
+  await new Promise(resolve => setImmediate(resolve))
+  const cue = w.document.getElementById('easytranslate-return-view')
+  if (['no-plan', 'changed-video', 'late-status'].includes(scenario)) {
+    assert.equal(cue, null, `no stale return action for ${scenario}`)
+  } else if (scenario === 'dismiss') {
+    cue.querySelector('[aria-label="Dismiss return to plan"]').click()
+    assert.equal(w.document.getElementById('easytranslate-return-view'), null)
+    assert.deepEqual(messages, ['get-video-view'])
+  } else {
+    assert.ok(cue)
+    const restore = cue.querySelector('button')
+    assert.equal(restore.textContent, 'Return to plan')
+    assert.deepEqual(messages, ['get-video-view'], 'exiting fullscreen must not fabricate a user gesture')
+    restore.click()
+    await new Promise(resolve => setImmediate(resolve))
+    if (scenario === 'open-failed') {
+      assert.equal(restore.disabled, false)
+      assert.equal(cue.querySelector('[role="status"]').hidden, false)
+      restore.click()
+      await new Promise(resolve => setImmediate(resolve))
+    }
+    assert.equal(w.document.getElementById('easytranslate-return-view'), null)
+    assert.equal(messages.at(-1), 'resume-video-view')
+  }
+  dom.window.close()
+}
+console.log('Fullscreen return restores only the current video after a real click, supports dismissal/retry, and ignores late or stale status.')

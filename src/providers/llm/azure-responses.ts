@@ -26,11 +26,11 @@ export class AzureResponsesProvider implements LlmProvider {
   readonly label = 'Azure OpenAI'
   private readonly client: AzureOpenAI
 
-  constructor(private readonly opts: ProviderOptions & { reasoningEffort?: VideoReasoningEffort }) {
+  constructor(private readonly opts: ProviderOptions & { reasoningEffort?: VideoReasoningEffort; fetch?: typeof globalThis.fetch }) {
     const endpoint = parseAzureResponsesEndpoint(opts.baseUrl ?? '')
     if (!opts.apiKey) throw new ProviderError('No Azure API key is saved.', 'Add the resource key in the settings for this Azure provider.')
     this.client = new AzureOpenAI({ ...endpoint, apiKey: opts.apiKey,
-      organization: null, project: null, maxRetries: 0, timeout: 60000 })
+      organization: null, project: null, maxRetries: 0, timeout: 60000, fetch: opts.fetch })
   }
 
   async ping(signal: AbortSignal): Promise<void> {
@@ -38,8 +38,11 @@ export class AzureResponsesProvider implements LlmProvider {
   }
 
   async *explain(req: ExplainRequest, signal: AbortSignal): AsyncIterable<string> {
-    // Reasoning tokens come out of the same budget here, so Azure gets extra room.
-    yield* this.generate({ system: systemPrompt(req.mode), user: userPrompt(req), maxTokens: outputBudget(req) + 2000 }, signal)
+    // A short non-reasoning edit/translation already has ample output room.
+    // Reserve extra tokens for reasoning, code, and longer selections as before.
+    const shortText = req.mode !== 'code' && (req.raw ?? req.text).length < 1000
+    const extra = this.opts.reasoningEffort === 'none' && shortText ? 0 : 2000
+    yield* this.generate({ system: systemPrompt(req.mode), user: userPrompt(req), maxTokens: outputBudget(req) + extra }, signal)
   }
 
   async *generate(req: GenerationRequest, signal: AbortSignal): AsyncIterable<string> {
@@ -54,7 +57,6 @@ export class AzureResponsesProvider implements LlmProvider {
       stream: true,
       store: false
     }, { signal })
-    let completed = false
     for await (const event of stream) {
       signal.throwIfAborted()
       if (event.type === 'response.output_text.delta') yield event.delta
@@ -77,9 +79,11 @@ export class AzureResponsesProvider implements LlmProvider {
           : 'Azure returned an incomplete response. No complete analysis was generated.')
       }
       if (event.type === 'error') throw new ProviderError('Azure response error.', event.message)
-      if (event.type === 'response.completed') completed = true
+      // This event confirms the complete answer. Waiting for the HTTP connection
+      // to close can leave Copy disabled even though generation has finished.
+      if (event.type === 'response.completed') return
     }
     signal.throwIfAborted()
-    if (!completed) throw new ProviderError('The Azure response stream ended before completion. Please retry.')
+    throw new ProviderError('The Azure response stream ended before completion. Please retry.')
   }
 }

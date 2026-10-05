@@ -72,7 +72,7 @@ describe('dictionary pronunciation enrichment', () => {
   it('anchors an absent word to the nearest word the dictionary does know', () => {
     // Asked cold, qwen-flash dropped a syllable from "reproducible". Shown the stem
     // first, it got it right.
-    const req = withPronunciationHints({ mode: 'word', text: 'reproducible' })
+    const req = withPronunciationHints({ mode: 'word', text: 'reproducible' }, true)
     expect(req.pronunciationAnchor).toEqual({ term: 'reproduce', ipa: lookupPronunciations('reproduce')[0] })
     expect(userPrompt(req)).toContain('not in the dictionary')
     expect(userPrompt(req)).toContain('reproduce')
