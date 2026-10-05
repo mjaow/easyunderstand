@@ -86,6 +86,29 @@ afterEach(async () => {
   vi.unstubAllGlobals()
 })
 
+describe('pronunciation labels in the rendered popup', () => {
+  it('distinguishes CMU, converted system entries and unverified model IPA', async () => {
+    await act(async () => update({ state: {
+      mode: 'word', text: 'Reproducible', status: 'done',
+      explanation: { ipa: '/ˌɹipɹəˈdusəbəɫ/', systemDictionaryIpa: ['Reproducible'] }
+    } }))
+    const system = container.querySelector('[title="macOS dictionary · converted from NOAD respelling"]')
+    expect(system?.textContent).toBe('/ˌɹipɹəˈdusəbəɫ/')
+    expect(system?.querySelector('[aria-label="unverified"]')).toBeNull()
+
+    await act(async () => update({ state: {
+      mode: 'passage', text: 'A source passage', status: 'done', explanation: {
+        notable: ['debit · /ˈdɛbɪt/ · 借记', 'reproducible · /ˌɹipɹəˈdusəbəɫ/ · 可复现的', 'unknownword · /test/ · 未知'],
+        systemDictionaryIpa: ['reproducible'], unverifiedIpa: ['unknownword']
+      }
+    } }))
+    expect(container.querySelector('[title="American English · CMU pronunciation dictionary"]')?.textContent).toBe('/ˈdɛbɪt/')
+    expect(container.querySelector('[title="macOS dictionary · converted from NOAD respelling"]')?.textContent).toBe('/ˌɹipɹəˈdusəbəɫ/')
+    expect(container.querySelector('[title="American English · model-generated pronunciation (unverified)"]')?.textContent).toBe('/test/°')
+    expect(container.querySelectorAll('[aria-label="unverified"]')).toHaveLength(1)
+  })
+})
+
 describe('copying from the rendered popup', () => {
   it('requests another refinement and clears copy feedback when the new attempt starts', async () => {
     expect(container.textContent).not.toContain('Try another version')

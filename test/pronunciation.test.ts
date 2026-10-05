@@ -51,10 +51,63 @@ describe('dictionary pronunciation enrichment', () => {
     }
   })
 
-  it('omits unknown IPA, with the explanation and examples still available', () => {
+  it('keeps the model’s IPA for a word the dictionary lacks, marked unverified', () => {
+    // The wordlist has no "reproducible" — and neither does Wiktionary, because a
+    // word built from parts gets left out. A labelled reading beats a blank.
+    const req: ExplainRequest = { mode: 'word', text: 'reproducible' }
+    const answer = { ipa: '/ˌriɹəˈdusəbəɫ/', zh: '可复现的' }
+
+    const shown = withDictionaryPronunciations(req, answer, true, true)
+    expect(shown.ipa).toBe('/ˌriɹəˈdusəbəɫ/')
+    expect(shown.unverifiedIpa).toEqual(['reproducible'])
+
+    // Off by default: measured, the model gets about half of these wrong, and half-wrong
+    // IPA is worse than none for a reader who cannot tell which half.
+    const withheld = withDictionaryPronunciations(req, answer)
+    expect(withheld.ipa).toBeUndefined()
+    expect(withheld.unverifiedIpa).toBeUndefined()
+    expect(withheld.zh).toBe('可复现的')
+  })
+
+  it('anchors an absent word to the nearest word the dictionary does know', () => {
+    // Asked cold, qwen-flash dropped a syllable from "reproducible". Shown the stem
+    // first, it got it right.
+    const req = withPronunciationHints({ mode: 'word', text: 'reproducible' }, true)
+    expect(req.pronunciationAnchor).toEqual({ term: 'reproduce', ipa: lookupPronunciations('reproduce')[0] })
+    expect(userPrompt(req)).toContain('not in the dictionary')
+    expect(userPrompt(req)).toContain('reproduce')
+
+    // A word the dictionary has needs no anchor, and must not be given one.
+    expect(withPronunciationHints({ mode: 'word', text: 'debit' }).pronunciationAnchor).toBeUndefined()
+  })
+
+  it('waits for the closing slash before showing an unverified reading', () => {
+    // Mid-stream the transcription is half-written. A pronunciation that appeared one
+    // symbol at a time would read as a different word with every chunk.
+    const parser = new SectionParser()
+    const shown: (string | undefined)[] = []
+    const req: ExplainRequest = { mode: 'word', text: 'reproducible' }
+    for (const char of '## IPA\n/ˌriɹəˈdusəbəɫ/\n## POS\nadjective\n') {
+      shown.push(withDictionaryPronunciations(req, parser.push(char), false, true).ipa)
+    }
+    // Nothing until it is whole, then only ever the whole thing.
+    expect([...new Set(shown.filter(Boolean))]).toEqual(['/ˌriɹəˈdusəbəɫ/'])
+  })
+
+  it('shows nothing rather than a non-pronunciation', () => {
+    // Only the shape can be checked, never the phonetics — but "(none)" and prose
+    // must not reach the popup dressed as a transcription.
+    for (const proposed of ['(none)', '（none）', 'unknown', '', 'ri-pro-DUCE-ible']) {
+      const result = withDictionaryPronunciations({ mode: 'word', text: 'qzxnotaword' }, { ipa: proposed }, true, true)
+      expect(result.ipa, proposed).toBeUndefined()
+      expect(result.unverifiedIpa, proposed).toBeUndefined()
+    }
+  })
+
+  it('leaves the explanation alone when there is no pronunciation to show', () => {
     const result = withDictionaryPronunciations(
       { mode: 'word', text: 'qzxnotaword' },
-      { ipa: '/invented/', zh: '解释', en: 'The explanation still works.' }
+      { ipa: '(none)', zh: '解释', en: 'The explanation still works.' }
     )
     expect(result).toEqual({ zh: '解释', en: 'The explanation still works.' })
   })
@@ -94,13 +147,16 @@ describe('dictionary pronunciation enrichment', () => {
         'read · /ˈɹɛd/ · 阅读 · I read yesterday.',
         'qzxnotaword · /invented/ · 未知词 · An example.'
       ]
-    })
+    }, true, true)
     expect(result.notable?.map(parseNotable)).toEqual([
+      // In the dictionary: its entry wins, whatever the model proposed.
       { term: 'debit', ipa: '/ˈdɛbɪt/', gloss: '借记', example: 'A debit appeared.' },
       { term: 'read', ipa: '/ˈɹɛd/', gloss: '阅读', example: 'I read yesterday.' },
-      { term: 'qzxnotaword', ipa: undefined, gloss: '未知词', example: 'An example.' }
+      // Not in the dictionary: the model's reading is kept, and listed as unverified.
+      { term: 'qzxnotaword', ipa: '/invented/', gloss: '未知词', example: 'An example.' }
     ])
-    expect(withDictionaryPronunciations(req, result)).toEqual(result)
+    expect(result.unverifiedIpa).toEqual(['qzxnotaword'])
+    expect(withDictionaryPronunciations(req, result, true, true)).toEqual(result)
   })
 
   it('removes model IPA from code responses and does not send dictionary hints for code', () => {

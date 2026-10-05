@@ -16,7 +16,14 @@ pronunciations for the same spelling.
 The wordlist is bundled into the main process by Vite's raw-text import. Lookups
 never contact a dictionary service and do not add a runtime dependency or API key.
 Pronunciations retain the source's broad IPA conventions (including /ɹ/ and /ɫ/).
-Only exact entries are used; unknown words and phrases have no IPA fallback.
+Only exact entries are used; pronunciations are not composed from stems and suffixes.
+
+This wordlist is the first source, not the only one. A word it lacks is looked up in
+macOS Dictionary Services via `src/main/native/dictionary-macos.ts`. This depends on
+the user's installed and enabled dictionaries. Compatible NOAD respellings are
+converted to IPA by `src/core/noad.ts`; unsupported entries are ignored. Failing both,
+`unverifiedPronunciations` may show the model's reading marked as unverified.
+This wordlist always wins where it has an entry.
 `src/core/pronunciation-usage.ts` adds brief sense/grammar labels for common
 homographs such as "read"; these labels reference the existing IPA candidates and
 never add or replace pronunciations.

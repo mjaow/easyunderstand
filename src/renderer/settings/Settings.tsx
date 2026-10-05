@@ -645,6 +645,23 @@ export function Settings(): React.ReactElement {
             })
           }
         />
+        <label className="flex items-start gap-2 text-[13px]">
+          <input
+            type="checkbox"
+            className="mt-0.5"
+            checked={config.unverifiedPronunciations}
+            onChange={(e) => void patch({ unverifiedPronunciations: e.target.checked })}
+          />
+          <span>
+            Show an unverified pronunciation for words the dictionary lacks
+            <span className="mt-0.5 block text-[11px] leading-snug" style={{ color: 'var(--text-subtle)' }}>
+              When the bundled dictionary and macOS dictionary fallback have no pronunciation,
+              let the model supply one. These readings can be wrong and appear dimmed with
+              a degree sign (°). Off by default. Read-aloud uses your configured voice
+              independently of this setting.
+            </span>
+          </span>
+        </label>
       </Card>
 
       <Card title="YouTube analysis">

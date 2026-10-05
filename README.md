@@ -303,9 +303,33 @@ For a word with multiple pronunciations, such as **read**, the explanation model
 select an exact dictionary candidate when the selected passage or supplied sentence
 provides context. Otherwise the alternatives are shown with **or**. Dictionary
 candidates prevent invented IPA, but a model can still select the wrong valid
-variant. Words and phrases without an entry have no IPA; their explanations and
-read-aloud still work. Existing answers with model-generated IPA are refreshed on
-the next lookup after this update.
+variant. Existing answers with model-generated IPA are refreshed on the next lookup
+after this update.
+
+**Words the bundled wordlist does not have.** On **macOS**, the app also queries
+Dictionary Services, which uses the user's enabled dictionaries. When it returns a
+compatible New Oxford American Dictionary (NOAD) entry, the app converts its
+respelling to IPA. For example, **reproducible** can show **/ˌɹipɹəˈdusəbəɫ/**.
+Availability depends on the dictionaries installed and enabled in Dictionary.app.
+The lookup is offline and needs no API key or additional permission.
+
+The converter requires an exact headword match, including entries in a base word's
+DERIVATIVES list, and rejects unsupported respellings. It uses the first listed
+pronunciation. Hovering over the IPA identifies a converted macOS dictionary entry
+separately from a bundled CMU entry. The bundled wordlist always takes precedence,
+so **read** keeps its existing alternatives. Native lookups, including misses, are
+cached in memory to avoid repeating them while an answer streams. Restart the app
+after changing the enabled system dictionaries to clear that cache.
+
+**Where neither dictionary has the word.** Settings → *Show an unverified
+pronunciation for words the dictionary lacks* lets the model supply IPA, shown
+dimmed and marked with a degree sign (**°**). It is **off by default** because these
+readings can be wrong. When enabled, an available dictionary stem may help the
+model transcribe an unfamiliar word; it does not verify the result. When disabled,
+the model is asked only to select supplied dictionary candidates.
+
+On **Windows**, the app continues to use the bundled wordlist and does not load
+macOS dictionary frameworks. The optional unverified setting works on both platforms.
 
 The speaker button reads the original text using your configured voice, separately
 from the displayed IPA. Changing pronunciation data does not change your explanation

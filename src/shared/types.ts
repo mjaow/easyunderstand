@@ -37,6 +37,12 @@ export interface PronunciationCandidate {
   usage?: string
 }
 
+/** A related word the dictionary does know, to anchor a transcription it does not. */
+export interface PronunciationAnchor {
+  term: string
+  ipa: string
+}
+
 export interface ExplainRequest {
   mode: ExplainMode
   /** The word, or the whole passage, tidied for display and for the cache key. */
@@ -52,6 +58,10 @@ export interface ExplainRequest {
   context?: string
   /** Local dictionary candidates supplied to the model for contextual selection. */
   pronunciationHints?: Record<string, readonly PronunciationCandidate[]>
+  /** Set only when the selection itself is absent from the dictionary. */
+  pronunciationAnchor?: PronunciationAnchor
+  /** Explicit opt-in to ask for model-generated IPA when no candidate is supplied. */
+  allowUnverifiedPronunciations?: boolean
 }
 
 /**
@@ -67,6 +77,15 @@ export interface Explanation {
   en?: string
   /** WORD only: dictionary IPA after enrichment; alternatives are separated by "or". */
   ipa?: string
+  /**
+   * Terms whose shown IPA is the model's reading rather than a dictionary entry.
+   *
+   * Holds display terms exactly as `ipa` and `notable` spell them, so the popup can
+   * match without needing the dictionary in the renderer bundle.
+   */
+  unverifiedIpa?: string[]
+  /** Display terms whose IPA was converted from the macOS dictionary's respelling. */
+  systemDictionaryIpa?: string[]
   /** WORD only: part of speech. */
   pos?: string
   /** Why it means that *here*, given the context. */
@@ -144,6 +163,11 @@ export interface AppConfig {
   }
   /** Double-clicking a line in a YouTube transcript explains it — no shortcut at all. */
   doubleClickTranscripts: boolean
+  /**
+   * Allow model-generated IPA when neither dictionary supplies a pronunciation.
+   * Off by default; displayed readings are explicitly marked as unverified.
+   */
+  unverifiedPronunciations: boolean
   llm: {
     provider: LlmProviderId
     /** Per-provider model id. Keys are LlmProviderId. */

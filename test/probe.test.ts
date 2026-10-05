@@ -6,6 +6,7 @@ function cfg(baseUrl: string, model = 'nonexistent-model'): AppConfig {
   return {
     hotkeys: { explain: '', refine: '' },
     doubleClickTranscripts: true,
+    unverifiedPronunciations: false,
     llm: {
       provider: 'ollama',
       models: { ollama: model },

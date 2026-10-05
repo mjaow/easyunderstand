@@ -212,13 +212,16 @@ export async function refineAgain(): Promise<void> {
 }
 
 async function run(req: ExplainRequest, isNew: boolean, fresh = false): Promise<void> {
-  req = withPronunciationHints(req)
+  const config = loadConfig()
+  req = withPronunciationHints(req, config.unverifiedPronunciations)
   lastRequest = req
   const previous = fresh ? lastRefinement : null
   if (isNew || req.mode !== 'refine') lastRefinement = null
   const attempt = req.mode === 'refine' ? ++refineAttempt : undefined
-  const config = loadConfig()
   const { explanations } = caches()
+  // Whether a word the dictionary lacks may show the model's reading instead of
+  // nothing. Off unless the user asked for it — see the setting's own note.
+  const unverifiedIpa = config.unverifiedPronunciations
   // Code may go to a stronger model; everything else stays on the everyday one.
   const model =
     (req.mode === 'code' && config.llm.codeModel.trim()) || config.llm.models[config.llm.provider]
@@ -227,7 +230,8 @@ async function run(req: ExplainRequest, isNew: boolean, fresh = false): Promise<
   const key = cacheKey(
     config.llm.provider, model, req.mode, systemPrompt(req.mode),
     req.mode === 'refine' ? req.raw ?? req.text : req.text, req.context,
-    req.mode === 'code' || req.mode === 'refine' ? undefined : PRONUNCIATION_CACHE_VERSION
+    req.mode === 'code' || req.mode === 'refine' ? undefined : PRONUNCIATION_CACHE_VERSION,
+    ...(req.mode !== 'code' && req.mode !== 'refine' && unverifiedIpa ? ['unverified-ipa'] : [])
   )
 
   // An explicit retry always calls the model; its completed result becomes the
@@ -239,7 +243,7 @@ async function run(req: ExplainRequest, isNew: boolean, fresh = false): Promise<
       text: req.text,
       raw: req.raw,
       context: req.context,
-      explanation: withDictionaryPronunciations(req, cached),
+      explanation: withDictionaryPronunciations(req, cached, true, unverifiedIpa),
       status: 'done',
       model,
       cached: true,
@@ -297,7 +301,7 @@ async function run(req: ExplainRequest, isNew: boolean, fresh = false): Promise<
     for await (const chunk of response) {
       if (controller.signal.aborted) return
       state.refineProgress = undefined
-      state.explanation = withDictionaryPronunciations(req, parser.push(chunk), false)
+      state.explanation = withDictionaryPronunciations(req, parser.push(chunk), false, unverifiedIpa)
       updatePopup(state)
     }
     if (controller.signal.aborted) return
@@ -308,7 +312,7 @@ async function run(req: ExplainRequest, isNew: boolean, fresh = false): Promise<
     if (req.previousRefinement && parsed.refined?.replace(/\s+/g, ' ').trim() === req.previousRefinement.replace(/\s+/g, ' ').trim()) {
       throw new Error('The model returned the same wording. Please try again.')
     }
-    state.explanation = withDictionaryPronunciations(req, parsed)
+    state.explanation = withDictionaryPronunciations(req, parsed, true, unverifiedIpa)
     state.status = 'done'
     state.refineProgress = undefined
     if (req.mode === 'refine') lastRefinement = state
@@ -331,7 +335,7 @@ async function run(req: ExplainRequest, isNew: boolean, fresh = false): Promise<
     // threw away a translation that had got most of the way there.
     const partial = parser.end()
     if (err instanceof OutputLimitError && Object.keys(partial).length > 0) {
-      state.explanation = withDictionaryPronunciations(req, partial)
+      state.explanation = withDictionaryPronunciations(req, partial, true, unverifiedIpa)
       state.status = 'done'
       state.warning = [err.message, err.hint].filter(Boolean).join(' ')
       // Deliberately not cached. A truncated answer stored under this key would be

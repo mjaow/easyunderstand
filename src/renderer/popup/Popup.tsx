@@ -87,6 +87,36 @@ function SpeakButton({
   )
 }
 
+/** What the reader is told about where a pronunciation came from. */
+const ATTESTED_TITLE = 'American English · CMU pronunciation dictionary'
+const SYSTEM_TITLE = 'macOS dictionary · converted from NOAD respelling'
+const UNVERIFIED_TITLE =
+  'American English · model-generated pronunciation (unverified)'
+
+/** Show the source on hover and visibly mark optional model-generated IPA. */
+function Ipa({
+  ipa,
+  verified,
+  system = false,
+  className = ''
+}: {
+  ipa: string
+  verified: boolean
+  system?: boolean
+  className?: string
+}): React.ReactElement {
+  return (
+    <span
+      className={`font-mono ${className}`}
+      title={!verified ? UNVERIFIED_TITLE : system ? SYSTEM_TITLE : ATTESTED_TITLE}
+      style={verified ? undefined : { opacity: 0.65, fontStyle: 'italic' }}
+    >
+      {ipa}
+      {!verified && <span aria-label="unverified">°</span>}
+    </span>
+  )
+}
+
 function Section({
   label,
   action,
@@ -270,6 +300,9 @@ export function Popup(): React.ReactElement | null {
       ? state.text
       : `${state.text.slice(0, 90)}…`
   const empty = Object.keys(ex).length === 0
+  // Matched on the display term, so the renderer never needs the 126k-entry wordlist.
+  const unverifiedIpa = new Set(ex.unverifiedIpa ?? [])
+  const systemDictionaryIpa = new Set(ex.systemDictionaryIpa ?? [])
 
   return (
     // The card itself scrolls, not this wrapper, which only supplies the margin the
@@ -318,9 +351,7 @@ export function Popup(): React.ReactElement | null {
               >
                 {isCode && ex.lang && <span className="italic">{ex.lang}</span>}
                 {isWord && ex.ipa && (
-                  <span className="font-mono" title="American English · CMU pronunciation dictionary">
-                    {ex.ipa}
-                  </span>
+                  <Ipa ipa={ex.ipa} verified={!unverifiedIpa.has(state.text)} system={systemDictionaryIpa.has(state.text)} />
                 )}
                 {isWord && ex.pos && <span className="italic">{ex.pos}</span>}
                 {state.model && (
@@ -494,13 +525,12 @@ export function Popup(): React.ReactElement | null {
                               {t.term}
                             </span>
                             {t.ipa && (
-                              <span
-                                className="font-mono text-[11px]"
-                                title="American English · CMU pronunciation dictionary"
-                                style={{ color: 'var(--text-subtle)' }}
-                              >
-                                {t.ipa}
-                              </span>
+                              <Ipa
+                                ipa={t.ipa}
+                                verified={!unverifiedIpa.has(t.term)}
+                                system={systemDictionaryIpa.has(t.term)}
+                                className="text-[11px]"
+                              />
                             )}
                             <SpeakButton text={t.term} compact onStatus={setStatus} />
                             {t.gloss && (

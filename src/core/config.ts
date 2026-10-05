@@ -27,6 +27,7 @@ export const DEFAULT_CONFIG: AppConfig = {
     refine: 'CommandOrControl+Alt+R'
   },
   doubleClickTranscripts: true,
+  unverifiedPronunciations: false,
   llm: {
     provider: 'claude',
     // Model ids are complete as-is — never append a date suffix.
@@ -88,6 +89,7 @@ function merge(stored: unknown): AppConfig {
   return {
     hotkeys: { ...DEFAULT_CONFIG.hotkeys, ...s.hotkeys },
     doubleClickTranscripts: s.doubleClickTranscripts ?? DEFAULT_CONFIG.doubleClickTranscripts,
+    unverifiedPronunciations: s.unverifiedPronunciations ?? DEFAULT_CONFIG.unverifiedPronunciations,
     llm: withVideoDefaults({
       ...DEFAULT_CONFIG.llm,
       ...s.llm,

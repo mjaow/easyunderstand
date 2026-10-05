@@ -13,6 +13,7 @@ function cfg(provider: TtsProviderId): AppConfig {
   return {
     hotkeys: { explain: '', refine: '' },
     doubleClickTranscripts: true,
+    unverifiedPronunciations: false,
     llm: { provider: 'ollama', models: {}, baseUrls: {}, codeModel: '', videoModel: '' },
     tts: {
       provider,

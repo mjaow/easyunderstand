@@ -51,11 +51,15 @@ or parse: a snippet in any programming language, a shell command, a query, a con
 or data fragment (JSON, YAML, ...), a stack trace. A sentence written for a person is
 "no", even when it names a language, a command, a key combination or a file.
 ## IPA
-Copy the matching American IPA EXACTLY from the supplied dictionary candidates.
-Match each candidate's usage label to the sentence's tense, meaning and part of speech.
-For example, "read every day" is present tense; "read yesterday" is past tense. If there
-is no context to resolve multiple candidates, or no candidates are supplied, write
-(none). Never invent or modify a pronunciation. Nothing else in this section.
+If dictionary candidates are supplied, copy the matching American IPA EXACTLY from
+them, and never modify one. Match each candidate's usage label to the sentence's tense,
+meaning and part of speech. For example, "read every day" is present tense; "read
+yesterday" is past tense. If there is no context to resolve between several candidates,
+write (none).
+If NO candidates are supplied, write (none). Only when the request explicitly says
+"Unverified pronunciations enabled", give your best American IPA wrapped in forward
+slashes for a word without candidates, or (none) if you do not know its pronunciation.
+Nothing else in this section.
 ## POS
 Part of speech in English, lowercase (noun, verb, adjective, idiom, ...). Nothing else.
 ## ZH
@@ -99,9 +103,13 @@ Pick the 2 to 5 hardest. Skip anything an intermediate reader already knows.
 One per line, using the middle dot as separator:
 term · /American IPA/ · Chinese meaning · a short example sentence
 
-For IPA, copy a supplied dictionary candidate EXACTLY, choosing by the word's meaning
-and grammar in this passage and the candidate's usage label. If no candidate is supplied or the choice is uncertain,
-omit the IPA field. Never invent IPA; the app supplies it from a local dictionary.
+For IPA: when a dictionary candidate is supplied, copy it EXACTLY, choosing by the
+word's meaning and grammar in this passage and the candidate's usage label — never
+modify one. If the choice is uncertain, omit the IPA field. When no candidate is
+supplied, omit the IPA field; the app fills dictionary
+entries locally. Only when the request explicitly says "Unverified pronunciations
+enabled", give your best American IPA for words without candidates, omitting it if
+you do not know the pronunciation. The app labels model-generated IPA as unverified.
 
 The example must be a NEW sentence of your own, not the one being explained, and short
 enough to read at a glance — under about ten words.
@@ -197,14 +205,24 @@ ${JSON.stringify({ original: selection, previousVersion: req.previousRefinement 
   const hints = req.mode !== 'code' && req.pronunciationHints && Object.keys(req.pronunciationHints).length
     ? `\n\nDictionary candidates (American IPA; copy exactly):\n${JSON.stringify(req.pronunciationHints)}`
     : ''
+  // Supplied only when the word itself is absent from the dictionary. It is something
+  // to work from, not something to copy: a related word's attested pronunciation.
+  const anchor = req.mode !== 'code' && req.allowUnverifiedPronunciations && req.pronunciationAnchor
+    ? `\n\nThis word is not in the dictionary. A related word that is: ` +
+      `${req.pronunciationAnchor.term} ${req.pronunciationAnchor.ipa}. Keep its phonemes ` +
+      `where the spelling is shared, and move the stress only if the word genuinely does.`
+    : ''
+  const policy = req.mode !== 'code' && req.allowUnverifiedPronunciations
+    ? '\n\nUnverified pronunciations enabled: you may supply American IPA for terms without dictionary candidates.'
+    : ''
   if (req.mode === 'word') {
     const sentence = req.context?.trim()
     const prompt = sentence && sentence !== req.text.trim()
       ? `Sentence: ${sentence}\n\nExplain this term from it: ${req.text}`
       : `Standalone word or phrase (no sentence supplied). Explain its common meaning and usage:\n\n${fenced(selection)}`
-    return prompt + hints
+    return prompt + hints + anchor + policy
   }
-  return `Explain this selection:\n\n${fenced(selection)}` + hints
+  return `Explain this selection:\n\n${fenced(selection)}` + hints + anchor + policy
 }
 
 // ------------------------------------------------------------ output budget

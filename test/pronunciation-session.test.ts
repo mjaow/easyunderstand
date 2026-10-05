@@ -1,19 +1,23 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Explanation, ExplainState } from '../src/shared/types.js'
 import { cacheKey } from '../src/core/cache.js'
 import { systemPrompt } from '../src/core/explain.js'
+import { setSystemDictionary } from '../src/core/pronunciation.js'
 
 const fixture = vi.hoisted(() => ({
   cache: new Map<string, Explanation>(),
   shown: [] as ExplainState[],
+  text: 'debit',
+  unverified: false,
+  chunks: ['## CODE\nno\n## IPA\n/dɪ', 'ˈbɪt/\n## POS\nnoun\n## ZH\n借记'],
   explain: vi.fn(async function* () {
-    for (const chunk of ['## CODE\nno\n## IPA\n/dɪ', 'ˈbɪt/\n## POS\nnoun\n## ZH\n借记']) yield chunk
+    for (const chunk of fixture.chunks) yield chunk
   })
 }))
 
 vi.mock('electron', () => ({ app: { getPath: () => '/unused' }, BrowserWindow: {}, screen: {} }))
 vi.mock('../src/main/capture.js', () => ({
-  captureSelection: async () => ({ ok: true, text: 'debit', raw: 'debit', elapsedMs: 1 })
+  captureSelection: async () => ({ ok: true, text: fixture.text, raw: fixture.text, elapsedMs: 1 })
 }))
 vi.mock('../src/main/coords.js', () => ({ screenToDip: vi.fn() }))
 vi.mock('../src/main/a11y.js', () => ({ readTranscriptAtPoint: vi.fn() }))
@@ -26,7 +30,7 @@ vi.mock('../src/main/popup.js', () => ({
   hidePopup: vi.fn(), isPopupVisible: () => false
 }))
 vi.mock('../src/core/config.js', () => ({
-  loadConfig: () => ({ llm: { provider: 'openai', models: { openai: 'qwen-flash' }, codeModel: '' } }),
+  loadConfig: () => ({ unverifiedPronunciations: fixture.unverified, llm: { provider: 'openai', models: { openai: 'qwen-flash' }, codeModel: '' } }),
   getSecret: () => null
 }))
 vi.mock('../src/core/cache.js', async (importOriginal) => ({
@@ -42,15 +46,64 @@ vi.mock('../src/providers/llm/registry.js', () => ({
 }))
 vi.mock('../src/providers/tts/registry.js', () => ({ speak: vi.fn() }))
 
-import { explainSelection } from '../src/main/session.js'
+import { explainSelection, refineSelection } from '../src/main/session.js'
 
 beforeEach(() => {
   fixture.cache.clear()
   fixture.shown.length = 0
   fixture.explain.mockClear()
+  fixture.text = 'debit'
+  fixture.unverified = false
+  fixture.chunks = ['## CODE\nno\n## IPA\n/dɪ', 'ˈbɪt/\n## POS\nnoun\n## ZH\n借记']
 })
+afterEach(() => setSystemDictionary(null))
 
 describe('pronunciation in the lookup session', () => {
+  it('reuses existing refinement caches regardless of the pronunciation setting', async () => {
+    fixture.text = 'A draft to improve.'
+    const key = cacheKey('openai', 'qwen-flash', 'refine', systemPrompt('refine'), fixture.text, undefined, undefined)
+    fixture.cache.set(key, { refined: 'An improved draft.' })
+    for (const enabled of [false, true]) {
+      fixture.unverified = enabled
+      await refineSelection()
+      expect(fixture.shown.at(-1)).toMatchObject({ mode: 'refine', cached: true, explanation: { refined: 'An improved draft.' } })
+    }
+    expect(fixture.explain).not.toHaveBeenCalled()
+  })
+
+  it('separates cached answers by the unverified setting and applies it to provider requests', async () => {
+    fixture.text = 'reproducible'
+    fixture.chunks = ['## IPA\n/ˌɹipɹəˈdusəbəɫ/\n## ZH\n可复现的']
+    await explainSelection()
+    expect(fixture.shown.at(-1)?.explanation.ipa).toBeUndefined()
+    expect(fixture.explain).toHaveBeenLastCalledWith(expect.objectContaining({ allowUnverifiedPronunciations: false }), expect.any(AbortSignal))
+    fixture.unverified = true
+    await explainSelection()
+    expect(fixture.explain).toHaveBeenCalledTimes(2)
+    expect(fixture.explain).toHaveBeenLastCalledWith(expect.objectContaining({ allowUnverifiedPronunciations: true }), expect.any(AbortSignal))
+    expect(fixture.shown.at(-1)?.explanation.unverifiedIpa).toEqual(['reproducible'])
+    await explainSelection()
+    expect(fixture.explain).toHaveBeenCalledTimes(2)
+    fixture.unverified = false
+    await explainSelection()
+    expect(fixture.explain).toHaveBeenCalledTimes(2)
+    expect(fixture.shown.at(-1)).toMatchObject({ cached: true, explanation: { zh: '可复现的' } })
+    expect(fixture.shown.at(-1)?.explanation.ipa).toBeUndefined()
+  })
+
+  it('keeps system IPA and its provenance across streaming and cached lookups', async () => {
+    fixture.text = 'reproducible'
+    const lookup = vi.fn(() => 'reproducible | ˌrēprəˈdo͞osəb(ə)l | adjective')
+    setSystemDictionary(lookup)
+    await explainSelection()
+    await explainSelection()
+    expect(fixture.explain).toHaveBeenCalledTimes(1)
+    expect(lookup).toHaveBeenCalledTimes(1)
+    expect(fixture.shown.at(-1)).toMatchObject({ cached: true, explanation: {
+      ipa: '/ˌɹipɹəˈdusəbəɫ/', systemDictionaryIpa: ['reproducible']
+    } })
+  })
+
   it('sends dictionary hints and displays only dictionary IPA through streaming and repeat lookups', async () => {
     await explainSelection()
     expect(fixture.explain).toHaveBeenCalledWith(

@@ -1,7 +1,7 @@
 /**
  * Repairs a half-installed Electron binary.
  *
- * Electron's own postinstall downloads a ~115MB zip and unpacks it with `extract-zip`.
+ * Electron's installer downloads a zip and unpacks it with `extract-zip`.
  * On some Windows machines — typically where security software inspects large archive
  * writes — that extraction stops after the first entry, leaving a `dist/` containing
  * only LICENSES.chromium.html and no electron.exe. The download itself is fine and
@@ -34,6 +34,13 @@ if (!existsSync(electronDir)) {
 
 if (process.platform !== 'win32') {
   ok('repair only applies to Windows.')
+  process.exit(0)
+}
+
+// Electron 44 downloads its binary on first use, not during npm install. A fresh
+// package with no dist directory is valid; only a partial extraction needs repair.
+if (!existsSync(distDir)) {
+  ok('binary not downloaded yet; Electron will install it on first launch.')
   process.exit(0)
 }
 

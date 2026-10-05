@@ -33,6 +33,8 @@ import { testVideoModel } from './video-model.js'
 import { pruneVideoCache } from '../core/video-cache.js'
 import { IS_MACOS, inputPermission, isAvailable, getLoadError } from './native/index.js'
 import { startClickWatcher, stopClickWatcher } from './clicks.js'
+import { setSystemDictionary } from '../core/pronunciation.js'
+import { systemDefinition, systemDictionaryAvailable } from './native/dictionary-macos.js'
 import { startLlmConnectionWarmup, warmLlmConnection } from './llm-connection.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -128,6 +130,9 @@ function main(): void {
   // and — the part that matters here — showing a window never pulls the app forward
   // and never takes focus off whatever the user is reading.
   if (IS_MACOS) app.dock?.hide()
+
+  // Register the optional native dictionary without coupling core to native bindings.
+  if (systemDictionaryAvailable()) setSystemDictionary(systemDefinition)
 
   createPopupWindow(preloadPath()).on('hide', cancelInFlight)
   createTray()
