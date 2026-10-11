@@ -1,8 +1,34 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { AzureTtsProvider } from '../src/providers/tts/azure.js'
 import { TtsError } from '../src/providers/tts/types.js'
 
 describe('AzureTtsProvider', () => {
+  it('aborts a pending response body when the caller cancels and preserves cancellation', async () => {
+    let requestSignal: AbortSignal | undefined
+    const original = globalThis.fetch
+    globalThis.fetch = vi.fn(async (_input, init) => {
+      requestSignal = init?.signal as AbortSignal
+      return {
+        ok: true,
+        arrayBuffer: () => new Promise<ArrayBuffer>((_resolve, reject) => {
+          requestSignal!.addEventListener('abort', () => reject(requestSignal!.reason), { once: true })
+        })
+      } as Response
+    })
+    try {
+      const controller = new AbortController()
+      const result = new AzureTtsProvider('key', 'eastus', 'Ava').synth('hello', 0, controller.signal)
+      const assertion = expect(result).rejects.toMatchObject({ name: 'AbortError' })
+      await Promise.resolve()
+      controller.abort()
+      await assertion
+      expect(requestSignal?.aborted).toBe(true)
+      await expect(new AzureTtsProvider('key', 'eastus', 'Ava').synth('hello', 0, controller.signal)).rejects.toMatchObject({ name: 'AbortError' })
+      expect(globalThis.fetch).toHaveBeenCalledOnce()
+    } finally {
+      globalThis.fetch = original
+    }
+  })
   it('refuses to construct without a key or region', () => {
     expect(() => new AzureTtsProvider(null, 'eastus', 'v')).toThrow(TtsError)
     expect(() => new AzureTtsProvider('k', '', 'v')).toThrow(TtsError)

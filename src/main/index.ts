@@ -36,6 +36,7 @@ import { startClickWatcher, stopClickWatcher } from './clicks.js'
 import { setSystemDictionary } from '../core/pronunciation.js'
 import { systemDefinition, systemDictionaryAvailable } from './native/dictionary-macos.js'
 import { startLlmConnectionWarmup, warmLlmConnection } from './llm-connection.js'
+import { cancelPronunciationPrefetch } from './speech.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
 
@@ -113,6 +114,7 @@ if (VERIFY_CAPTURE) {
 }
 
 function main(): void {
+  app.on('before-quit', cancelPronunciationPrefetch)
   const stopConnectionWarmup = startLlmConnectionWarmup(loadConfig)
   app.on('before-quit', stopConnectionWarmup)
   const cleanVideoCache = (): void => pruneVideoCache(join(app.getPath('userData'), 'video-cache'))
@@ -428,6 +430,7 @@ function registerIpc(): void {
   }))
 
   ipcMain.handle(IPC.configSet, (_e, patch: Partial<AppConfig>) => {
+    if (patch?.tts) cancelPronunciationPrefetch()
     const saved = saveConfig(patch ?? {})
     // Hotkeys and the login item are OS-level state, so they have to be re-applied
     // whenever settings change rather than read on demand. No dialog here — Settings
@@ -443,8 +446,10 @@ function registerIpc(): void {
 
   ipcMain.handle(
     IPC.configSecretSet,
-    (_e, payload: { provider: SecretId; value: string }) =>
-      setSecret(payload.provider, payload.value ?? '')
+    (_e, payload: { provider: SecretId; value: string }) => {
+      if (payload.provider === 'tts') cancelPronunciationPrefetch()
+      return setSecret(payload.provider, payload.value ?? '')
+    }
   )
 
   ipcMain.handle(IPC.hotkeyCheck, (_e, accelerator: unknown) =>

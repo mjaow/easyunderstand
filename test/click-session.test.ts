@@ -48,7 +48,7 @@ vi.mock('../src/core/cache.js', async importOriginal => ({
 vi.mock('../src/providers/llm/registry.js', () => ({
   createLlmProvider: () => ({ explain: fixture.explain }), describeError: vi.fn()
 }))
-vi.mock('../src/providers/tts/registry.js', () => ({ speak: vi.fn() }))
+vi.mock('../src/main/speech.js', () => ({ synthesize: vi.fn(), prefetchPronunciation: vi.fn(), cancelPronunciationPrefetch: vi.fn() }))
 
 import { explainClickedTranscript } from '../src/main/session.js'
 import { readTranscriptAtPoint } from '../src/main/a11y.js'

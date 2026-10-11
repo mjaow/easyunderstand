@@ -30,7 +30,7 @@ class FakeAudio {
 
 vi.stubGlobal('Audio', FakeAudio)
 
-const { playAudio, stopAudio, isPlaying } = await import('../src/renderer/popup/player.js')
+const { beginAudioRequest, isCurrentAudioRequest, playAudio, stopAudio, isPlaying } = await import('../src/renderer/popup/player.js')
 
 describe('popup audio channel', () => {
   beforeEach(() => {
@@ -79,6 +79,20 @@ describe('popup audio channel', () => {
 
     expect(isPlaying()).toBe(true)
     expect(secondStopped).not.toHaveBeenCalled()
+    expect(firstStopped).toHaveBeenCalledOnce()
+  })
+
+  it('invalidates pending audio on close and when a later button takes the channel', async () => {
+    const stopped = vi.fn()
+    const old = beginAudioRequest(stopped)
+    stopAudio()
+    await playAudio('late.mp3', stopped, old)
+    expect(isCurrentAudioRequest(old)).toBe(false)
+    expect(FakeAudio.instances).toHaveLength(0)
+    expect(stopped).toHaveBeenCalledOnce()
+    const next = beginAudioRequest(vi.fn())
+    await playAudio('new.mp3', vi.fn(), next)
+    expect(FakeAudio.instances.map(audio => audio.src)).toEqual(['new.mp3'])
   })
 
   it('stopping when nothing plays is harmless', () => {

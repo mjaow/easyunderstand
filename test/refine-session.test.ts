@@ -35,7 +35,7 @@ vi.mock('../src/providers/llm/registry.js', () => ({
   createLlmProvider: fixture.provider,
   describeError: (_provider: string, error: Error) => ({ message: error.message })
 }))
-vi.mock('../src/providers/tts/registry.js', () => ({ speak: vi.fn() }))
+vi.mock('../src/main/speech.js', () => ({ synthesize: vi.fn(), prefetchPronunciation: vi.fn(), cancelPronunciationPrefetch: vi.fn() }))
 
 import { cancelInFlight, explainSelection, refineSelection, refineAgain, toggleOrExplain, toggleOrRefine } from '../src/main/session.js'
 import { OutputLimitError } from '../src/providers/llm/types.js'

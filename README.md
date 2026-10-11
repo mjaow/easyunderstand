@@ -391,13 +391,26 @@ Azure failures do not attempt a public model listing.
 
 - **Natural voice (Azure)**: neural voices over plain HTTPS. Free for 500k characters a
   month, far more than reading uses. Needs a Speech resource key and its region.
-- **System voice**: free, offline, instant, noticeably robotic — SAPI on Windows,
-  `say` on macOS. The automatic fallback when the online voice fails. On a Mac set up
+- **System voice**: free, offline, noticeably robotic — SAPI on Windows,
+  `say` on macOS. The automatic fallback when the online voice fails or is slow. On a Mac set up
   in another language it uses Samantha rather than the system default, since hearing
   American English is the point.
 
 The read-aloud key has its own slot, because the `openai` LLM slot often holds a Gemini
 or Groq key that a speech API would reject.
+
+With a configured natural voice, word lookups prepare normal-speed audio while the
+explanation loads. Prefetch is limited to English selections of up to three words
+and 80 characters, is debounced, and never plays automatically. It can use Azure
+Speech characters even if you do not click the speaker. A click reuses the same
+request or cached clip; closing or replacing the lookup cancels unused prefetch.
+
+If Azure has not finished after two seconds, the app starts the offline voice and
+uses whichever succeeds first. The losing request is cancelled. Offline failure
+still leaves Azure a chance to finish, and fallback recordings are cached separately
+so the next play can try Azure again. Normal and slow recordings keep separate caches.
+`speech-timing.log` in the data folder records provider, duration, cache use and
+fallback reasons without recording the selected text or keys.
 
 ---
 

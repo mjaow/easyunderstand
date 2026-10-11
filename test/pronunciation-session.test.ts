@@ -44,11 +44,14 @@ vi.mock('../src/core/cache.js', async (importOriginal) => ({
 vi.mock('../src/providers/llm/registry.js', () => ({
   createLlmProvider: () => ({ explain: fixture.explain }), describeError: vi.fn()
 }))
-vi.mock('../src/providers/tts/registry.js', () => ({ speak: vi.fn() }))
+vi.mock('../src/main/speech.js', () => ({ synthesize: vi.fn(), prefetchPronunciation: vi.fn(), cancelPronunciationPrefetch: vi.fn() }))
 
-import { explainSelection, refineSelection } from '../src/main/session.js'
+import { explainSelection, refineSelection, cancelInFlight } from '../src/main/session.js'
+import { prefetchPronunciation, cancelPronunciationPrefetch } from '../src/main/speech.js'
 
 beforeEach(() => {
+  vi.mocked(prefetchPronunciation).mockClear()
+  vi.mocked(cancelPronunciationPrefetch).mockClear()
   fixture.cache.clear()
   fixture.shown.length = 0
   fixture.explain.mockClear()
@@ -59,6 +62,22 @@ beforeEach(() => {
 afterEach(() => setSystemDictionary(null))
 
 describe('pronunciation in the lookup session', () => {
+  it('prefetches ordinary word lookups, including cached ones, and cancels on close', async () => {
+    await explainSelection()
+    await explainSelection()
+    expect(prefetchPronunciation).toHaveBeenCalledTimes(2)
+    expect(prefetchPronunciation).toHaveBeenCalledWith('debit')
+    vi.mocked(cancelPronunciationPrefetch).mockClear()
+    cancelInFlight()
+    expect(cancelPronunciationPrefetch).toHaveBeenCalledOnce()
+  })
+
+  it('does not prefetch passages or refinement requests', async () => {
+    fixture.text = 'This is a longer passage.'
+    await explainSelection()
+    await refineSelection()
+    expect(prefetchPronunciation).not.toHaveBeenCalled()
+  })
   it('reuses existing refinement caches regardless of the pronunciation setting', async () => {
     fixture.text = 'A draft to improve.'
     const key = cacheKey('openai', 'qwen-flash', 'refine', systemPrompt('refine'), fixture.text, undefined, undefined)

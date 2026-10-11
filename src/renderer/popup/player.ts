@@ -12,6 +12,18 @@ type StopListener = () => void
 
 let audio: HTMLAudioElement | null = null
 let notifyStopped: StopListener | null = null
+let requestId = 0
+
+/** Claim the channel before requesting audio, so late responses cannot take it back. */
+export function beginAudioRequest(whenStopped: StopListener): number {
+  stopAudio()
+  notifyStopped = whenStopped
+  return requestId
+}
+
+export function isCurrentAudioRequest(id: number): boolean {
+  return id === requestId
+}
 
 /**
  * Play a clip, replacing anything already playing.
@@ -19,8 +31,9 @@ let notifyStopped: StopListener | null = null
  * @param whenStopped called when the clip ends, or when something else interrupts
  *                    it — so the button that started it can reset itself.
  */
-export async function playAudio(url: string, whenStopped: StopListener): Promise<void> {
-  stopAudio()
+export async function playAudio(url: string, whenStopped: StopListener, id?: number): Promise<void> {
+  if (id === undefined) beginAudioRequest(whenStopped)
+  else if (!isCurrentAudioRequest(id)) return
 
   const el = new Audio(url)
   audio = el
@@ -32,8 +45,8 @@ export async function playAudio(url: string, whenStopped: StopListener): Promise
     if (audio === el) {
       audio = null
       notifyStopped = null
+      whenStopped()
     }
-    whenStopped()
   })
 
   try {
@@ -42,14 +55,15 @@ export async function playAudio(url: string, whenStopped: StopListener): Promise
     if (audio === el) {
       audio = null
       notifyStopped = null
+      whenStopped()
+      throw err
     }
-    whenStopped()
-    throw err
   }
 }
 
 /** Stop whatever is playing. Safe to call when nothing is. */
 export function stopAudio(): void {
+  requestId++
   const previous = notifyStopped
   if (audio) {
     audio.pause()

@@ -19,10 +19,11 @@ import {
   withPronunciationHints
 } from '../core/pronunciation.js'
 import { loadConfig, getSecret } from '../core/config.js'
-import { JsonLruCache, AudioCache, cacheKey } from '../core/cache.js'
+import { JsonLruCache, cacheKey } from '../core/cache.js'
 import { createLlmProvider, describeError } from '../providers/llm/registry.js'
 import { OutputLimitError } from '../providers/llm/types.js'
-import { speak } from '../providers/tts/registry.js'
+import { prefetchPronunciation, cancelPronunciationPrefetch } from './speech.js'
+export { synthesize } from './speech.js'
 import type { Explanation } from '../shared/types.js'
 
 /**
@@ -56,12 +57,10 @@ function permissionNote(): string {
 }
 
 let explanationCache: JsonLruCache<Explanation> | null = null
-let audioCache: AudioCache | null = null
 
-function caches(): { explanations: JsonLruCache<Explanation>; audio: AudioCache } {
+function caches(): { explanations: JsonLruCache<Explanation> } {
   explanationCache ??= new JsonLruCache<Explanation>(join(app.getPath('userData'), 'explanations.json'))
-  audioCache ??= new AudioCache(join(app.getPath('userData'), 'audio'))
-  return { explanations: explanationCache, audio: audioCache }
+  return { explanations: explanationCache }
 }
 
 let inFlight: AbortController | null = null
@@ -76,6 +75,7 @@ let popupAction: SelectionAction = 'explain'
 
 /** Also called when Escape or the close button hides the popup. */
 export function cancelInFlight(): void {
+  cancelPronunciationPrefetch()
   inFlight?.abort()
   inFlight = null
 }
@@ -212,6 +212,7 @@ export async function refineAgain(): Promise<void> {
 }
 
 async function run(req: ExplainRequest, isNew: boolean, fresh = false): Promise<void> {
+  if (req.mode === 'word') prefetchPronunciation(req.text)
   const config = loadConfig()
   req = withPronunciationHints(req, config.unverifiedPronunciations)
   lastRequest = req
@@ -381,40 +382,6 @@ export async function copySelection(text: string): Promise<{ ok: boolean; error?
     return { ok: true }
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : String(err) }
-  }
-}
-
-/**
- * Synthesize speech for the popup, serving from disk when we've said it before.
- * @returns a data URL the renderer can hand straight to an <audio> element.
- */
-export async function synthesize(
-  text: string,
-  slow: boolean
-): Promise<{ url: string; usedProvider: string; fallbackReason?: string }> {
-  const config = loadConfig()
-  const { audio } = caches()
-  const rate = slow ? config.tts.slowRate : 0
-  const voice =
-    config.tts.provider === 'online'
-      ? `${config.tts.azureRegion}/${config.tts.azureVoice}`
-      : config.tts.systemVoice
-  const key = cacheKey(config.tts.provider, voice, String(rate), text)
-
-  for (const ext of ['mp3', 'wav'] as const) {
-    const hit = audio.get(key, ext)
-    if (hit) {
-      const mime = ext === 'mp3' ? 'audio/mpeg' : 'audio/wav'
-      return { url: `data:${mime};base64,${hit.toString('base64')}`, usedProvider: 'cache' }
-    }
-  }
-
-  const result = await speak(config, text, rate, getSecret('tts'))
-  audio.set(key, result.mime === 'audio/mpeg' ? 'mp3' : 'wav', result.data)
-  return {
-    url: `data:${result.mime};base64,${result.data.toString('base64')}`,
-    usedProvider: result.usedProvider,
-    fallbackReason: result.fallbackReason
   }
 }
 

@@ -31,7 +31,8 @@ export class AzureTtsProvider implements TtsProvider {
     }
   }
 
-  async synth(text: string, rate: number): Promise<SynthResult> {
+  async synth(text: string, rate: number, signal?: AbortSignal): Promise<SynthResult> {
+    signal?.throwIfAborted()
     const url = `https://${this.region}.tts.speech.microsoft.com/cognitiveservices/v1`
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(), TIMEOUT_MS)
@@ -39,7 +40,7 @@ export class AzureTtsProvider implements TtsProvider {
     try {
       const res = await fetch(url, {
         method: 'POST',
-        signal: controller.signal,
+        signal: signal ? AbortSignal.any([signal, controller.signal]) : controller.signal,
         headers: {
           'Ocp-Apim-Subscription-Key': this.apiKey!,
           'Content-Type': 'application/ssml+xml',
@@ -55,6 +56,7 @@ export class AzureTtsProvider implements TtsProvider {
       if (data.length === 0) throw new TtsError('Azure returned no audio.')
       return { data, mime: 'audio/mpeg' }
     } catch (err) {
+      signal?.throwIfAborted()
       if (err instanceof TtsError) throw err
       if (err instanceof Error && err.name === 'AbortError') {
         throw new TtsError('Azure voice timed out.')

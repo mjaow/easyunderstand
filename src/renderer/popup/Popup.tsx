@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ExplainState } from '@shared/types'
 import { parseNotable, parseConcept } from '@core/notable'
-import { playAudio, stopAudio } from './player'
+import { beginAudioRequest, isCurrentAudioRequest, playAudio, stopAudio } from './player'
 
 /**
  * The English half of an example.
@@ -37,6 +37,11 @@ function SpeakButton({
 }): React.ReactElement {
   const [busy, setBusy] = useState(false)
   const [playing, setPlaying] = useState(false)
+  const request = useRef<number | null>(null)
+
+  useEffect(() => () => {
+    if (request.current !== null && isCurrentAudioRequest(request.current)) stopAudio()
+  }, [text, slow])
 
   const click = useCallback(async () => {
     // While this clip is playing the button becomes a stop button — a long passage
@@ -47,22 +52,33 @@ function SpeakButton({
     }
     if (busy || !text.trim()) return
 
+    const stopped = (): void => {
+      request.current = null
+      setBusy(false)
+      setPlaying(false)
+    }
+    const id = beginAudioRequest(stopped)
+    request.current = id
     setBusy(true)
     onStatus(null)
     try {
       const res = await window.easytranslate.speak(text, slow)
+      if (!isCurrentAudioRequest(id)) return
       if (res.error || !res.url) {
         onStatus(res.error ?? 'Could not read that aloud.')
+        stopAudio()
         return
       }
-      if (res.fallbackReason) onStatus('Using the offline system voice — the online voice is unavailable.')
+      if (res.fallbackReason) onStatus('Using the offline system voice — the online voice is slow or unavailable.')
       setPlaying(true)
-      await playAudio(res.url, () => setPlaying(false))
+      await playAudio(res.url, stopped, id)
     } catch (err) {
-      setPlaying(false)
-      onStatus(err instanceof Error ? err.message : String(err))
+      if (isCurrentAudioRequest(id)) {
+        onStatus(err instanceof Error ? err.message : String(err))
+        stopAudio()
+      }
     } finally {
-      setBusy(false)
+      if (isCurrentAudioRequest(id)) setBusy(false)
     }
   }, [busy, playing, text, slow, onStatus])
 
@@ -252,19 +268,28 @@ export function Popup(): React.ReactElement | null {
   const [state, setState] = useState<ExplainState | null>(null)
   const [status, setStatus] = useState<string | null>(null)
   const contentRef = useRef<HTMLDivElement>(null)
+  const audioLookup = useRef<string | undefined>(undefined)
 
   useEffect(() => {
     return window.easytranslate.onUpdate(({ state: next }) => {
-      // A new lookup replaces the old one, so its audio should not linger.
-      stopAudio()
+      // Streaming more explanation for the same lookup must not cancel its audio.
+      const lookup = `${next.mode}\0${next.text}\0${next.refineAttempt ?? ''}`
+      if (lookup !== audioLookup.current) {
+        stopAudio()
+        setStatus(null)
+        audioLookup.current = lookup
+      }
       setState(next)
-      setStatus(null)
     })
   }, [])
 
   // The window only hides, it is never destroyed, so playback has to be stopped
   // explicitly when it goes away.
-  useEffect(() => window.easytranslate.onStopAudio(() => stopAudio()), [])
+  useEffect(() => window.easytranslate.onStopAudio(() => {
+    stopAudio()
+    audioLookup.current = undefined
+    setStatus(null)
+  }), [])
 
   const { notice: copyNotice, copy } = useCopyOnSelect(state ? `${state.mode}\0${state.raw ?? state.text}\0${state.refineAttempt ?? ''}` : undefined)
 
