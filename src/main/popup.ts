@@ -163,6 +163,7 @@ export function showPopup(state: ExplainState, reposition = true): void {
 
   if (reposition) positionNearCursor(win.getBounds().height || INITIAL_HEIGHT)
 
+  win.webContents.send(IPC.popupStop)
   win.webContents.send(IPC.popupUpdate, { state })
 
   if (!win.isVisible()) win.showInactive()

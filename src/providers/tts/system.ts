@@ -6,6 +6,22 @@ import { TtsError, type SynthResult, type TtsProvider } from './types.js'
 
 const EXEC_TIMEOUT_MS = 15000
 
+/** Wait for process exit before cleaning its files, including after cancellation. */
+function runVoice(file: string, argv: string[], label: string, signal?: AbortSignal): Promise<void> {
+  signal?.throwIfAborted()
+  return new Promise((resolve, reject) => {
+    const child = execFile(file, argv, { timeout: EXEC_TIMEOUT_MS, windowsHide: true }, (err, _out, stderr) => {
+      signal?.removeEventListener('abort', cancel)
+      if (signal?.aborted) reject(signal.reason)
+      else if (err) reject(new TtsError(`The ${label} system voice failed.`, stderr?.trim() || err.message))
+      else resolve()
+    })
+    const cancel = (): void => { child.kill() }
+    signal?.addEventListener('abort', cancel, { once: true })
+    if (signal?.aborted) cancel()
+  })
+}
+
 /** SAPI takes an integer from -10 to 10; ours is a percentage offset. */
 export function sapiRate(rate: number): number {
   return Math.max(-10, Math.min(10, Math.round(rate / 10)))
@@ -47,9 +63,10 @@ export class SystemTtsProvider implements TtsProvider {
 
   constructor(private readonly voiceName?: string) {}
 
-  async synth(text: string, rate: number): Promise<SynthResult> {
-    if (process.platform === 'darwin') return this.synthMac(text, rate)
-    if (process.platform === 'win32') return this.synthWindows(text, rate)
+  async synth(text: string, rate: number, signal?: AbortSignal): Promise<SynthResult> {
+    signal?.throwIfAborted()
+    if (process.platform === 'darwin') return this.synthMac(text, rate, signal)
+    if (process.platform === 'win32') return this.synthWindows(text, rate, signal)
     throw new TtsError(`There is no offline voice for ${process.platform}.`)
   }
 
@@ -59,7 +76,7 @@ export class SystemTtsProvider implements TtsProvider {
    * `say` writes the audio straight to a WAV file, so there is no script at all
    * here — the text goes in a file and the file's path is an argument.
    */
-  private async synthMac(text: string, rate: number): Promise<SynthResult> {
+  private async synthMac(text: string, rate: number, signal?: AbortSignal): Promise<SynthResult> {
     const dir = await mkdtemp(join(tmpdir(), 'easytranslate-'))
     const inFile = join(dir, 'in.txt')
     const outFile = join(dir, 'out.wav')
@@ -81,15 +98,7 @@ export class SystemTtsProvider implements TtsProvider {
         inFile
       ]
 
-      await new Promise<void>((resolve, reject) => {
-        execFile('/usr/bin/say', argv, { timeout: EXEC_TIMEOUT_MS }, (err, _out, stderr) => {
-          if (err) {
-            reject(new TtsError('The macOS system voice failed.', stderr?.trim() || err.message))
-            return
-          }
-          resolve()
-        })
-      })
+      await runVoice('/usr/bin/say', argv, 'macOS', signal)
 
       const data = await readFile(outFile)
       if (data.length === 0) throw new TtsError('The system voice produced no audio.')
@@ -101,7 +110,7 @@ export class SystemTtsProvider implements TtsProvider {
 
   // ---------------------------------------------------------------- Windows
 
-  private async synthWindows(text: string, rate: number): Promise<SynthResult> {
+  private async synthWindows(text: string, rate: number, signal?: AbortSignal): Promise<SynthResult> {
     const dir = await mkdtemp(join(tmpdir(), 'easytranslate-'))
     const inFile = join(dir, 'in.txt')
     const outFile = join(dir, 'out.wav')
@@ -111,16 +120,16 @@ export class SystemTtsProvider implements TtsProvider {
       // line — PowerShell reads it from a file. Nothing the user selects can be
       // interpreted as script.
       await writeFile(inFile, text, 'utf8')
-      await this.runSapi(inFile, outFile, rate)
+      await this.runSapi(inFile, outFile, rate, signal)
       const data = await readFile(outFile)
       if (data.length === 0) throw new TtsError('The system voice produced no audio.')
       return { data, mime: 'audio/wav' }
     } finally {
-      await Promise.allSettled([unlink(inFile), unlink(outFile)])
+      await rm(dir, { recursive: true, force: true }).catch(() => {})
     }
   }
 
-  private async runSapi(inFile: string, outFile: string, rate: number): Promise<void> {
+  private async runSapi(inFile: string, outFile: string, rate: number, signal?: AbortSignal): Promise<void> {
     const scriptFile = inFile.replace(/in\.txt$/, 'speak.ps1')
 
     // Everything variable arrives as a positional argument, so neither the selected
@@ -167,15 +176,7 @@ try {
     if (this.voiceName) argv.push(this.voiceName)
 
     try {
-      await new Promise<void>((resolve, reject) => {
-        execFile('powershell.exe', argv, { timeout: EXEC_TIMEOUT_MS }, (err, _out, stderr) => {
-          if (err) {
-            reject(new TtsError('The Windows system voice failed.', stderr?.trim() || err.message))
-            return
-          }
-          resolve()
-        })
-      })
+      await runVoice('powershell.exe', argv, 'Windows', signal)
     } finally {
       await unlink(scriptFile).catch(() => {})
     }

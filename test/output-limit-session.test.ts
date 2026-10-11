@@ -57,7 +57,7 @@ vi.mock('../src/providers/llm/registry.js', () => ({
   createLlmProvider: () => ({ explain: fixture.explain }),
   describeError: () => ({ message: 'should not be used', hint: '' })
 }))
-vi.mock('../src/providers/tts/registry.js', () => ({ speak: vi.fn() }))
+vi.mock('../src/main/speech.js', () => ({ synthesize: vi.fn(), prefetchPronunciation: vi.fn(), cancelPronunciationPrefetch: vi.fn() }))
 
 const { explainSelection } = await import('../src/main/session.js')
 

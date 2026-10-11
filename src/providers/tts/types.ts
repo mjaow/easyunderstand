@@ -13,7 +13,7 @@ export interface TtsProvider {
    * @param rate Relative speed as a percentage offset; 0 is normal, -40 is the
    *             turtle button. Providers clamp to whatever they support.
    */
-  synth(text: string, rate: number): Promise<SynthResult>
+  synth(text: string, rate: number, signal?: AbortSignal): Promise<SynthResult>
 }
 
 export class TtsError extends Error {

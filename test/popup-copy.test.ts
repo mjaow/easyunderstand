@@ -324,3 +324,75 @@ describe('copying from the rendered popup', () => {
     expect(container.querySelector('[role="alert"]')).toBeNull()
   })
 })
+
+describe('speech requests in the rendered popup', () => {
+  class AudioFixture {
+    static instances: AudioFixture[] = []
+    static fail = false
+    paused = false
+    currentTime = 0
+    constructor(readonly src: string) { AudioFixture.instances.push(this) }
+    addEventListener(): void {}
+    play(): Promise<void> { return AudioFixture.fail ? Promise.reject(new Error('Playback failed')) : Promise.resolve() }
+    pause(): void { this.paused = true }
+  }
+  type SpeechReply = Awaited<ReturnType<typeof window.easytranslate.speak>>
+  const speaker = (): HTMLButtonElement => container.querySelector('[aria-label="Read aloud"]')!
+
+  beforeEach(() => {
+    AudioFixture.instances = []
+    AudioFixture.fail = false
+    vi.stubGlobal('Audio', AudioFixture)
+  })
+
+  it.each(['hide', 'new lookup'])('does not play a late response after %s', async (action) => {
+    let finish!: (value: SpeechReply) => void
+    vi.mocked(window.easytranslate.speak).mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+    await act(async () => speaker().click())
+    await act(async () => {
+      if (action === 'hide') stopListeners.forEach(listener => listener())
+      else update({ state: { ...state, text: 'Another lookup' } })
+    })
+    await act(async () => finish({ url: 'old.mp3' }))
+    expect(AudioFixture.instances).toHaveLength(0)
+    expect(speaker().disabled).toBe(false)
+  })
+
+  it('plays only the latest button when normal and slow requests finish out of order', async () => {
+    const replies: Array<(value: SpeechReply) => void> = []
+    vi.mocked(window.easytranslate.speak).mockImplementation(() => new Promise(resolve => replies.push(resolve)))
+    await act(async () => speaker().click())
+    await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Read slowly"]')!.click())
+    expect(window.easytranslate.speak).toHaveBeenNthCalledWith(1, state.text, false)
+    expect(window.easytranslate.speak).toHaveBeenNthCalledWith(2, state.text, true)
+    await act(async () => replies[1]({ url: 'slow.mp3' }))
+    await act(async () => replies[0]({ error: 'Late failure' }))
+    expect(AudioFixture.instances.map(audio => audio.src)).toEqual(['slow.mp3'])
+    expect(container.textContent).not.toContain('Late failure')
+    await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Stop"]')!.click())
+    expect(AudioFixture.instances[0].paused).toBe(true)
+  })
+
+  it('keeps pending and playing audio through explanation streaming updates', async () => {
+    let finish!: (value: SpeechReply) => void
+    vi.mocked(window.easytranslate.speak).mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+    await act(async () => speaker().click())
+    await act(async () => update({ state: { ...state, status: 'streaming', explanation: { zh: 'More explanation' } } }))
+    await act(async () => finish({ url: 'current.mp3' }))
+    expect(AudioFixture.instances).toHaveLength(1)
+    await act(async () => update({ state: { ...state, explanation: { zh: 'Complete explanation' } } }))
+    expect(AudioFixture.instances[0].paused).toBe(false)
+    expect(container.querySelector('[aria-label="Stop"]')).not.toBeNull()
+  })
+
+  it('recovers the speaker button after an audio playback failure', async () => {
+    vi.mocked(window.easytranslate.speak).mockResolvedValue({ url: 'current.mp3' })
+    AudioFixture.fail = true
+    await act(async () => speaker().click())
+    expect(container.textContent).toContain('Playback failed')
+    expect(speaker().disabled).toBe(false)
+    AudioFixture.fail = false
+    await act(async () => speaker().click())
+    expect(container.querySelector('[aria-label="Stop"]')).not.toBeNull()
+  })
+})
