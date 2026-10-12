@@ -508,6 +508,17 @@ export function Settings(): React.ReactElement {
           Uses the model configured under Explanations.
         </p>
 
+        <HotkeyRecorder
+          label="Summarize selection"
+          value={config.hotkeys.summarize}
+          onCommit={(v) => patch({ hotkeys: { ...config.hotkeys, summarize: v } })}
+        />
+        <p className="text-[11px] leading-snug" style={{ color: 'var(--text-subtle)' }}>
+          Summarize a sentence or article in a few short, clear sentences.
+          English stays English; Chinese stays Chinese. Select the text, use the shortcut,
+          then click Copy summary. Uses the model configured under Explanations.
+        </p>
+
         <label className="flex items-center gap-2 text-[13px]">
           <input
             type="checkbox"

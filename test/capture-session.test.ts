@@ -65,7 +65,7 @@ vi.mock('../src/providers/llm/registry.js', () => ({
 }))
 vi.mock('../src/main/speech.js', () => ({ synthesize: vi.fn(), prefetchPronunciation: vi.fn(), cancelPronunciationPrefetch: vi.fn() }))
 
-import { explainSelection, refineSelection } from '../src/main/session.js'
+import { explainSelection, refineSelection, summarizeSelection } from '../src/main/session.js'
 import { sendCopy } from '../src/main/native/index.js'
 
 beforeEach(() => {
@@ -79,15 +79,17 @@ beforeEach(() => {
 afterEach(() => { vi.useRealTimers() })
 
 describe('selected sentence to translated popup', () => {
-  it('shares safe capture between refinement and explanation when both hotkeys are pressed', async () => {
-    const refine = refineSelection()
-    const explain = explainSelection()
+  it.each([
+    ['refine', refineSelection], ['summary', summarizeSelection]
+  ] as const)('shares safe capture when %s and the other hotkeys are pressed together', async (mode, start) => {
+    const first = start()
+    const others = [explainSelection(), refineSelection(), summarizeSelection()]
     await vi.runAllTimersAsync()
-    await Promise.all([refine, explain])
+    await Promise.all([first, ...others])
     expect(sendCopy).toHaveBeenCalledTimes(1)
     expect(fixture.explain).toHaveBeenCalledTimes(1)
     expect(fixture.explain).toHaveBeenCalledWith(
-      expect.objectContaining({ mode: 'refine', raw: fixture.sentence }), expect.any(AbortSignal)
+      expect.objectContaining({ mode, raw: fixture.sentence }), expect.any(AbortSignal)
     )
     expect(fixture.clipboardText).toBe('original clipboard')
   })

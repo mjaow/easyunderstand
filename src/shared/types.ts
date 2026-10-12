@@ -1,7 +1,7 @@
 /** Types shared across main, preload and renderer. Keep this dependency-free. */
 
 /** Bump when new Settings require handlers unavailable in older background apps. */
-export const SETTINGS_API_VERSION = 4
+export const SETTINGS_API_VERSION = 5
 
 // ---------------------------------------------------------------- capture
 
@@ -27,9 +27,9 @@ export type CaptureResult =
  * Both are chosen from selection length. CODE explains a snippet of source code, and
  * is never chosen here: the model flags a selection as code in its ordinary answer,
  * the popup offers a button, and the click asks for CODE as a second step. REFINE
- * is explicitly requested with its own hotkey and preserves the source language.
+ * and SUMMARY each have a hotkey and preserve the source language.
  */
-export type ExplainMode = 'word' | 'passage' | 'code' | 'refine'
+export type ExplainMode = 'word' | 'passage' | 'code' | 'refine' | 'summary'
 
 export interface PronunciationCandidate {
   ipa: string
@@ -69,6 +69,8 @@ export interface ExplainRequest {
  * Kept flat and optional so a half-arrived response still renders.
  */
 export interface Explanation {
+  /** SUMMARY only: a brief, faithful summary in the original language. */
+  summary?: string
   /** REFINE only: improved text in the original language, ready to copy. */
   refined?: string
   /** Natural Chinese rendering. */
@@ -160,6 +162,8 @@ export interface AppConfig {
     explain: string
     /** Improve selected writing without translating it. */
     refine: string
+    /** Summarize selected text without translating it. */
+    summarize: string
   }
   /** Double-clicking a line in a YouTube transcript explains it — no shortcut at all. */
   doubleClickTranscripts: boolean

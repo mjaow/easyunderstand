@@ -19,6 +19,7 @@ export async function runSettingsVerification(registerIpc: () => void, preload: 
     await window.loadURL('about:blank')
     const bootstrap = await window.webContents.executeJavaScript('window.easytranslate.getConfig()')
     assert.equal(bootstrap.settingsApiVersion, SETTINGS_API_VERSION)
+    assert.equal(bootstrap.config.hotkeys.summarize, 'CommandOrControl+Alt+S')
     const result = await window.webContents.executeJavaScript('window.easytranslate.testVideoModel()')
     assert.equal(result.ok, false)
     assert.match(result.message, /video API key/)

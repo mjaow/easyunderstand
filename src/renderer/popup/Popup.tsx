@@ -313,8 +313,9 @@ export function Popup(): React.ReactElement | null {
   const isWord = mode === 'word'
   const isCode = mode === 'code'
   const isRefine = mode === 'refine'
+  const isSummary = mode === 'summary'
   // The model's verdict on the ordinary answer: offer the code explanation as a step.
-  const offerCode = !isCode && !isRefine && ex.isCode === true
+  const offerCode = !isCode && !isRefine && !isSummary && ex.isCode === true
   // A snippet's headline is its first line: twelve lines of code must not become a
   // twelve-line header.
   const shaped = state.raw ?? state.text
@@ -358,9 +359,9 @@ export function Popup(): React.ReactElement | null {
           style={{ borderColor: 'var(--border)', background: 'var(--surface-muted)' }}
         >
           <div className="et-selectable min-w-0 flex-1">
-            {isRefine && (
+            {(isRefine || isSummary) && (
               <div className="mb-0.5 text-[10px] font-medium uppercase tracking-wider" style={{ color: 'var(--accent)' }}>
-                Refine · same language
+                {isSummary ? 'Summary · same language' : 'Refine · same language'}
               </div>
             )}
             <div className={`font-semibold leading-snug ${isCode ? 'font-mono text-[12px]' : 'text-[14px]'}`}>
@@ -395,8 +396,8 @@ export function Popup(): React.ReactElement | null {
 
           <div className="flex shrink-0 items-center">
             {/* Code is not read aloud; the English explanation below has its own button. */}
-            {!isCode && !isRefine && <SpeakButton text={state.text} onStatus={setStatus} />}
-            {!isCode && !isRefine && <SpeakButton text={state.text} slow onStatus={setStatus} />}
+            {!isCode && !isRefine && !isSummary && <SpeakButton text={state.text} onStatus={setStatus} />}
+            {!isCode && !isRefine && !isSummary && <SpeakButton text={state.text} slow onStatus={setStatus} />}
             <button
               onClick={() => window.easytranslate.close()}
               title="Close (Esc)"
@@ -423,6 +424,12 @@ export function Popup(): React.ReactElement | null {
                 <Section label="refined text">
                   {ex.refined && <div style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{ex.refined}</div>}
                 </Section>
+              )}
+
+              {isSummary && ex.summary && (
+                <div className="text-[14px] leading-relaxed" style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>
+                  {ex.summary}
+                </div>
               )}
 
               {offerCode && (
@@ -579,17 +586,17 @@ export function Popup(): React.ReactElement | null {
             </>
           )}
 
-          {isRefine && state.text.trim() && (
+          {(isRefine || isSummary) && state.text.trim() && (
             <div className="flex flex-wrap gap-2">
               <button
-                onClick={() => void copy(ex.refined ?? '')}
-                disabled={state.status !== 'done' || !ex.refined || !!state.warning || copyNotice?.kind === 'pending'}
+                onClick={() => void copy((isSummary ? ex.summary : ex.refined) ?? '')}
+                disabled={state.status !== 'done' || !(isSummary ? ex.summary : ex.refined) || !!state.warning || copyNotice?.kind === 'pending'}
                 className="rounded-md px-2.5 py-1.5 text-[12px] font-medium disabled:opacity-40"
                 style={{ background: 'var(--accent)', color: 'var(--surface)' }}
               >
-                {copyNotice?.kind === 'pending' ? 'Copying…' : 'Copy refined text'}
+                {copyNotice?.kind === 'pending' ? 'Copying…' : isSummary ? 'Copy summary' : 'Copy refined text'}
               </button>
-              <button
+              {isRefine && <button
                 onClick={() => window.easytranslate.refineAgain()}
                 disabled={state.status === 'streaming' || copyNotice?.kind === 'pending'}
                 className="rounded-md border px-2.5 py-1.5 text-[12px] font-medium disabled:opacity-40"
@@ -597,7 +604,7 @@ export function Popup(): React.ReactElement | null {
                 title="Try different wording with the same meaning and language"
               >
                 {state.status === 'streaming' ? 'Refining…' : 'Try another version'}
-              </button>
+              </button>}
             </div>
           )}
 

@@ -12,6 +12,7 @@ import { IS_MACOS, copyChordLabel, foregroundWindowTitle, inputPermission } from
 import { showPopup, updatePopup, hidePopup, isPopupVisible } from './popup.js'
 import { detectMode, SectionParser, systemPrompt } from '../core/explain.js'
 import { RefinementParser } from '../core/refine.js'
+import { SummaryParser } from '../core/summary.js'
 import { streamRefinement } from '../core/refine-generation.js'
 import {
   PRONUNCIATION_CACHE_VERSION,
@@ -70,7 +71,7 @@ let capturingSelection = false
 let lastRequest: ExplainRequest | null = null
 let lastRefinement: ExplainState | null = null
 let refineAttempt = 0
-type SelectionAction = 'explain' | 'refine'
+type SelectionAction = 'explain' | 'refine' | 'summarize'
 let popupAction: SelectionAction = 'explain'
 
 /** Also called when Escape or the close button hides the popup. */
@@ -81,7 +82,7 @@ export function cancelInFlight(): void {
 }
 
 function emit(state: ExplainState, isNew: boolean): void {
-  popupAction = state.mode === 'refine' ? 'refine' : 'explain'
+  popupAction = state.mode === 'summary' ? 'summarize' : state.mode === 'refine' ? 'refine' : 'explain'
   if (isNew) showPopup(state)
   else updatePopup(state)
 }
@@ -94,6 +95,10 @@ export async function explainSelection(): Promise<void> {
 /** Uses the same copy capture for editable textboxes and read-only selections. */
 export async function refineSelection(): Promise<void> {
   await processSelection('refine')
+}
+
+export async function summarizeSelection(): Promise<void> {
+  await processSelection('summarize')
 }
 
 async function processSelection(action: SelectionAction): Promise<void> {
@@ -111,7 +116,7 @@ async function processSelection(action: SelectionAction): Promise<void> {
   }
   if (!result.ok) {
     emit({
-      mode: action === 'refine' ? 'refine' : 'passage',
+      mode: action === 'summarize' ? 'summary' : action === 'refine' ? 'refine' : 'passage',
       text: '',
       explanation: {},
       status: 'error',
@@ -120,7 +125,7 @@ async function processSelection(action: SelectionAction): Promise<void> {
     return
   }
 
-  const mode = action === 'refine' ? 'refine' : detectMode(result.text)
+  const mode = action === 'summarize' ? 'summary' : action === 'refine' ? 'refine' : detectMode(result.text)
   await run({ mode, text: result.text, raw: result.raw }, true)
 }
 
@@ -197,7 +202,7 @@ export async function explainClickedTranscript(click: { x: number; y: number }):
  * model flagged the selection as code in it, and this is the user taking the offer.
  */
 export async function explainLastAsCode(): Promise<void> {
-  if (!lastRequest || lastRequest.mode === 'refine') return
+  if (!lastRequest || lastRequest.mode === 'refine' || lastRequest.mode === 'summary') return
   cancelInFlight()
   await run({ mode: 'code', text: lastRequest.text, raw: lastRequest.raw }, false)
 }
@@ -223,6 +228,8 @@ async function run(req: ExplainRequest, isNew: boolean, fresh = false): Promise<
   // Whether a word the dictionary lacks may show the model's reading instead of
   // nothing. Off unless the user asked for it — see the setting's own note.
   const unverifiedIpa = config.unverifiedPronunciations
+  const plainText = req.mode === 'refine' || req.mode === 'summary'
+  const pronunciation = req.mode === 'word' || req.mode === 'passage'
   // Code may go to a stronger model; everything else stays on the everyday one.
   const model =
     (req.mode === 'code' && config.llm.codeModel.trim()) || config.llm.models[config.llm.provider]
@@ -230,9 +237,9 @@ async function run(req: ExplainRequest, isNew: boolean, fresh = false): Promise<
   // produced it, and an improved prompt must not keep serving the old answer.
   const key = cacheKey(
     config.llm.provider, model, req.mode, systemPrompt(req.mode),
-    req.mode === 'refine' ? req.raw ?? req.text : req.text, req.context,
-    req.mode === 'code' || req.mode === 'refine' ? undefined : PRONUNCIATION_CACHE_VERSION,
-    ...(req.mode !== 'code' && req.mode !== 'refine' && unverifiedIpa ? ['unverified-ipa'] : [])
+    plainText ? req.raw ?? req.text : req.text, req.context,
+    pronunciation ? PRONUNCIATION_CACHE_VERSION : undefined,
+    ...(pronunciation && unverifiedIpa ? ['unverified-ipa'] : [])
   )
 
   // An explicit retry always calls the model; its completed result becomes the
@@ -287,7 +294,8 @@ async function run(req: ExplainRequest, isNew: boolean, fresh = false): Promise<
 
   const controller = new AbortController()
   inFlight = controller
-  let parser = req.mode === 'refine' ? new RefinementParser() : new SectionParser()
+  let parser = req.mode === 'summary' ? new SummaryParser()
+    : req.mode === 'refine' ? new RefinementParser() : new SectionParser()
 
   try {
     const response = req.mode === 'refine'
@@ -307,6 +315,9 @@ async function run(req: ExplainRequest, isNew: boolean, fresh = false): Promise<
     }
     if (controller.signal.aborted) return
     const parsed = parser.end()
+    if (req.mode === 'summary' && !parsed.summary) {
+      throw new Error('The model returned no summary. Select the text and try again.')
+    }
     if (req.mode === 'refine' && !parsed.refined) {
       throw new Error('The model returned no refined text. Try again.')
     }
@@ -392,6 +403,10 @@ export function toggleOrExplain(): void {
 
 export function toggleOrRefine(): void {
   toggleSelection('refine')
+}
+
+export function toggleOrSummarize(): void {
+  toggleSelection('summarize')
 }
 
 function toggleSelection(action: SelectionAction): void {

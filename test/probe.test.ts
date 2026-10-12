@@ -4,7 +4,7 @@ import type { AppConfig } from '../src/shared/types.js'
 
 function cfg(baseUrl: string, model = 'nonexistent-model'): AppConfig {
   return {
-    hotkeys: { explain: '', refine: '' },
+    hotkeys: { explain: '', refine: '', summarize: '' },
     doubleClickTranscripts: true,
     unverifiedPronunciations: false,
     llm: {

@@ -110,6 +110,40 @@ describe('pronunciation labels in the rendered popup', () => {
 })
 
 describe('copying from the rendered popup', () => {
+  it.each(['The proposal remains unapproved.', '该提案尚未获批。', '該提案尚未獲批。'])(
+    'copies only the complete summary after an explicit click: %s', async summary => {
+      const source: ExplainState = { mode: 'summary', text: 'A long source article', status: 'streaming', explanation: { summary } }
+      await act(async () => update({ state: source }))
+      expect(container.textContent).toContain('Summary · same language')
+      expect(container.textContent).toContain(summary)
+      expect(container.textContent).not.toContain('Try another version')
+      expect(container.textContent).not.toContain('in plain english')
+      const button = [...container.querySelectorAll('button')].find(b => b.textContent === 'Copy summary')!
+      expect(button.disabled).toBe(true)
+      expect(copySelection).not.toHaveBeenCalled()
+      expect(clipboardText).toBe('original clipboard')
+      await act(async () => update({ state: { ...source, status: 'done' } }))
+      expect(button.disabled).toBe(false)
+      await act(async () => button.click())
+      expect(copySelection).toHaveBeenCalledTimes(1)
+      expect(copySelection).toHaveBeenCalledWith(summary)
+      expect(clipboardText).toBe(summary)
+      expect(container.textContent).toContain('Copied to clipboard')
+    }
+  )
+
+  it.each(['truncated', 'failed'] as const)('cannot copy a %s summary as a completed result', async kind => {
+    await act(async () => update({ state: {
+      mode: 'summary', text: 'Article', explanation: { summary: 'Partial text' },
+      status: kind === 'failed' ? 'error' : 'done',
+      ...(kind === 'failed' ? { error: 'Connection failed' } : { warning: 'The answer was cut short.' })
+    } }))
+    const button = [...container.querySelectorAll('button')].find(b => b.textContent === 'Copy summary')!
+    expect(button.disabled).toBe(true)
+    await act(async () => button.click())
+    expect(copySelection).not.toHaveBeenCalled()
+  })
+
   it('requests another refinement and clears copy feedback when the new attempt starts', async () => {
     expect(container.textContent).not.toContain('Try another version')
     const draft: ExplainState = { mode: 'refine', text: 'Original draft', status: 'done', refineAttempt: 1, explanation: { refined: 'First version' } }

@@ -107,7 +107,7 @@ export function runHotkeyProbe(): void {
 
   console.log('\nEasyUnderstand — hotkey availability\n')
 
-  const results = [...new Set([...configured, ...FALLBACKS.explain, ...FALLBACKS.refine, ...CANDIDATES])].map(probe)
+  const results = [...new Set([...configured, ...Object.values(FALLBACKS).flat(), ...CANDIDATES])].map(probe)
   const pad = Math.max(...results.map((r) => r.accelerator.length))
 
   for (const r of results) {

@@ -6,7 +6,7 @@ import { TtsError, type SynthResult } from '../src/providers/tts/types.js'
 import type { AppConfig } from '../src/shared/types.js'
 
 const speechConfig = (): AppConfig => ({
-  hotkeys: { explain: '', refine: '' }, doubleClickTranscripts: true,
+  hotkeys: { explain: '', refine: '', summarize: '' }, doubleClickTranscripts: true,
   unverifiedPronunciations: false, launchAtLogin: false,
   llm: { provider: 'ollama', models: {}, baseUrls: {}, codeModel: '', videoModel: '' },
   tts: { provider: 'online', systemVoice: 'Zira', azureRegion: 'eastus', azureVoice: 'en-US-AvaMultilingualNeural', slowRate: -40, autoPlay: false }
