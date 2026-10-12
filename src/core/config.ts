@@ -24,7 +24,8 @@ export const DEFAULT_CONFIG: AppConfig = {
     // CommandOrControl rather than Control: one stored shortcut is then correct on
     // Windows (Ctrl) and macOS (Cmd) alike, instead of being tied to where it was set.
     explain: 'CommandOrControl+Alt+E',
-    refine: 'CommandOrControl+Alt+R'
+    refine: 'CommandOrControl+Alt+R',
+    summarize: 'CommandOrControl+Alt+S'
   },
   doubleClickTranscripts: true,
   unverifiedPronunciations: false,

@@ -99,7 +99,7 @@ export function stemAnchor(term: string): PronunciationAnchor | undefined {
 
 /** Give the explanation model a bounded choice, not a request to invent IPA. */
 export function withPronunciationHints(req: ExplainRequest, allowUnverified = false): ExplainRequest {
-  if (req.mode === 'code' || req.mode === 'refine') return req
+  if (req.mode === 'code' || req.mode === 'refine' || req.mode === 'summary') return req
   const hints: Record<string, readonly PronunciationCandidate[]> = Object.create(null)
   const terms = req.mode === 'word'
     ? [req.text]
@@ -167,7 +167,7 @@ export function withDictionaryPronunciations(
   delete result.ipa
   delete result.unverifiedIpa
   delete result.systemDictionaryIpa
-  const isCode = req.mode === 'code' || req.mode === 'refine' || explanation.isCode
+  const isCode = req.mode === 'code' || req.mode === 'refine' || req.mode === 'summary' || explanation.isCode
   const unverified: string[] = []
   const system: string[] = []
 

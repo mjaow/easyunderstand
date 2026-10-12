@@ -13,6 +13,7 @@ along the way.
 |---|---|
 | Words and passages | Plain English and Chinese explanations, common or contextual meanings, examples, dictionary pronunciation, and read-aloud. |
 | Your writing | Clearer spelling, grammar, wording, structure, and flow in the original language. |
+| Sentences and articles | A very short, precise summary in the original language. |
 | Code | Its purpose, step-by-step reasoning, design choices, and possible bugs or edge cases in the selected snippet. |
 | YouTube videos | The core argument and takeaways first, concise breakdowns with timestamp sources, and a separate assessment of the evidence and reasoning. |
 
@@ -56,7 +57,7 @@ including Simplified or Traditional characters. Mixed-language text keeps its la
 
 Click **Copy refined text**, then paste it into any editable field. The source text
 stays in place and capture restores your clipboard. Refinement uses your existing
-**Explanations** model and key. Change either shortcut under **Settings → Hotkeys**;
+**Explanations** model and key. Change shortcuts under **Settings → Hotkeys**;
 if a shortcut is taken, the app chooses and saves an available alternative.
 
 Cloud refinement automatically retries once if no text arrives for five seconds
@@ -64,6 +65,21 @@ or a response stops progressing for five seconds. It shows **Connection is slow.
 Retrying…** and keeps the original selection. Azure desktop lookups use Electron’s
 browser networking, and Copy becomes available as soon as Azure confirms completion.
 The recovery request can incur an additional API charge; no new setting is needed.
+
+### Summarize a sentence or article
+
+Select the sentence or article text, then press **`Ctrl+Alt+S`** on Windows or
+**`⌘⌥S`** on macOS. The popup gives one short sentence for a short selection, or
+two or three short sentences for an article, focused on the main point and essential
+qualifications. English stays English; Chinese stays Chinese, preserving Simplified
+or Traditional characters. Click **Copy summary** to copy the completed result.
+
+Summarize reads the full selection and uses your existing **Explanations** model and
+key. It aims for at most 60 English words or 120 Chinese characters, with room for
+essential qualifications. Change the shortcut under **Settings → Hotkeys**; if it
+is taken, the app saves an available alternative. Explain and Refine keep their
+existing behavior. Summarize works on selected text, so select the article's text
+rather than its URL.
 
 ### Translate YouTube captions and transcript lines
 
@@ -255,11 +271,13 @@ Settings opens by itself the first time, since nothing works until step 1 is don
 |---|---|
 | Select text, press `Ctrl+Alt+E` (`⌘⌥E`) | Explain the selection |
 | Select text, press `Ctrl+Alt+R` (`⌘⌥R`) | Refine writing in its original language |
+| Select text, press `Ctrl+Alt+S` (`⌘⌥S`) | Summarize briefly in its original language |
 | Double-click a YouTube caption exposed by the page | Explain the current caption |
 | Double-click a line in the YouTube transcript panel | Explain that line |
 | `Esc`, or the shortcut again | Close the popup |
 | Select any words in the popup | Copies them — selecting *is* the copy |
 | Click **Copy refined text** | Copy the complete refinement, ready to paste |
+| Click **Copy summary** | Copy the complete summary |
 
 - **Three words or fewer** are treated as a term: dictionary IPA when available,
   part of speech, common meanings when selected alone or the relevant meaning when
@@ -497,6 +515,7 @@ npm run verify:hotkeys # clipboard shortcuts refused, conflicts fall back, avail
 npm run verify:click   # real OS double-clicks on a YouTube-shaped page come back as the right lines
 npm run verify:code    # asks the configured model: snippets come back as code, prose as prose
 npm run verify:refine  # asks the configured model: English, Chinese, and mixed-language editing
+npm run verify:summary # asks the configured model: brief summaries, language, and key qualifications
 npm run probe:hotkeys  # which shortcuts are free on this machine
 ```
 

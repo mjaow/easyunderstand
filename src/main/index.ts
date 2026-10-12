@@ -19,6 +19,7 @@ import {
   synthesize,
   toggleOrExplain,
   toggleOrRefine,
+  toggleOrSummarize,
   cancelInFlight,
   flushCaches,
   explainClickedTranscript,
@@ -67,6 +68,7 @@ const VERIFY_HOTKEYS = process.argv.includes('--verify-hotkeys')
 const VERIFY_CLICK = process.argv.includes('--verify-click')
 const VERIFY_CODE = process.argv.includes('--verify-code')
 const VERIFY_REFINE = process.argv.includes('--verify-refine')
+const VERIFY_SUMMARY = process.argv.includes('--verify-summary')
 const VERIFY_SETTINGS = process.argv.includes('--verify-settings')
 
 if (VERIFY_CAPTURE) {
@@ -99,6 +101,11 @@ if (VERIFY_CAPTURE) {
   void app.whenReady().then(async () => {
     const { runHotkeyProbe } = await import('./probe-hotkeys.js')
     runHotkeyProbe()
+  })
+} else if (VERIFY_SUMMARY) {
+  void app.whenReady().then(async () => {
+    const { runSummaryVerification } = await import('./verify-summary.js')
+    await runSummaryVerification()
   })
 } else if (VERIFY_SETTINGS) {
   void app.whenReady().then(async () => {
@@ -246,16 +253,18 @@ function applyHotkeys(announce = true): void {
 
   const config = loadConfig()
   const result = registerHotkeys(
-    bindingsFor(config, { explain: toggleOrExplain, refine: toggleOrRefine })
+    bindingsFor(config, { explain: toggleOrExplain, refine: toggleOrRefine, summarize: toggleOrSummarize })
   )
 
   // A reassignment is only useful if it sticks, so persist what actually bound —
   // otherwise the same conflict would be rediscovered on every launch.
-  const { explain, refine } = result.resolved
-  if ((explain && explain !== config.hotkeys.explain) || (refine && refine !== config.hotkeys.refine)) {
+  const { explain, refine, summarize } = result.resolved
+  if ((explain && explain !== config.hotkeys.explain) || (refine && refine !== config.hotkeys.refine) ||
+      (summarize && summarize !== config.hotkeys.summarize)) {
     saveConfig({ hotkeys: {
       explain: explain || config.hotkeys.explain,
-      refine: refine || config.hotkeys.refine
+      refine: refine || config.hotkeys.refine,
+      summarize: summarize || config.hotkeys.summarize
     } })
   }
 
@@ -333,6 +342,7 @@ function refreshTrayMenu(): void {
     Menu.buildFromTemplate([
       { label: `Explain selection  (${config.hotkeys.explain})`, click: () => toggleOrExplain() },
       { label: `Refine selection  (${config.hotkeys.refine})`, click: () => toggleOrRefine() },
+      { label: `Summarize selection  (${config.hotkeys.summarize})`, click: () => toggleOrSummarize() },
       { type: 'separator' },
       {
         label: 'Pause',

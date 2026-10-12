@@ -68,6 +68,13 @@ export const FALLBACKS: Record<HotkeyId, string[]> = {
     'CommandOrControl+Shift+R',
     'F9',
     'CommandOrControl+F9'
+  ],
+  summarize: [
+    'CommandOrControl+Alt+S',
+    'CommandOrControl+Alt+Shift+S',
+    'CommandOrControl+Alt+U',
+    'F10',
+    'CommandOrControl+F10'
   ]
 }
 
@@ -119,7 +126,7 @@ function tryRegister(accelerator: string, handler: () => void): string | null {
 export function registerHotkeys(bindings: HotkeyBinding[]): RegistrationResult {
   unregisterHotkeys()
   const result: RegistrationResult = {
-    resolved: { explain: '', refine: '' },
+    resolved: { explain: '', refine: '', summarize: '' },
     reassigned: [],
     failed: []
   }
@@ -198,6 +205,12 @@ export function bindingsFor(
       accelerator: config.hotkeys.refine,
       handler: handlers.refine,
       description: 'Refine selection'
+    },
+    {
+      id: 'summarize',
+      accelerator: config.hotkeys.summarize,
+      handler: handlers.summarize,
+      description: 'Summarize selection'
     }
   ]
 }

@@ -11,6 +11,7 @@ import { createLlmProvider } from '../src/providers/llm/registry.js'
 import { probeProvider } from '../src/providers/llm/probe.js'
 import { outputBudget, SectionParser, systemPrompt, userPrompt } from '../src/core/explain.js'
 import { RefinementParser } from '../src/core/refine.js'
+import { SummaryParser } from '../src/core/summary.js'
 import { parseWatchPlanResponse, watchPlanPrompt } from '../src/core/watch-plan.js'
 import type { VideoTranscript } from '../src/shared/video.js'
 const secrets = vi.hoisted(() => ({ ids: [] as string[] }))
@@ -55,7 +56,7 @@ beforeEach(async () => {
 afterEach(async () => { vi.unstubAllEnvs(); server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())) })
 function config(): AppConfig {
   const c: AppConfig = {
-    hotkeys: { explain: '', refine: '' }, doubleClickTranscripts: false,
+    hotkeys: { explain: '', refine: '', summarize: '' }, doubleClickTranscripts: false,
     unverifiedPronunciations: false, launchAtLogin: false,
     tts: { provider: 'system', systemVoice: '', azureRegion: '', azureVoice: '', slowRate: -40, autoPlay: false },
     llm: { provider: 'openai', models: { openai: 'qwen-flash' }, baseUrls: { openai: 'https://everyday.example.invalid/v1' }, codeModel: '',
@@ -87,7 +88,7 @@ describe('Azure Responses adapter', () => {
       body: { model: 'gpt-6-luna', reasoning: { effort: 'none' }, store: false, text: { format: { type: 'json_object' } } } })
     expect(secrets.ids).toEqual(['video'])
   })
-  it.each(['word', 'passage', 'refine', 'code'] as const)('routes everyday %s explanations through Azure without JSON mode', async mode => {
+  it.each(['word', 'passage', 'refine', 'code', 'summary'] as const)('routes everyday %s explanations through Azure without JSON mode', async mode => {
     const c = config()
     c.llm.provider = 'azure'
     c.llm.models.azure = 'gpt-6-luna'
@@ -97,15 +98,16 @@ describe('Azure Responses adapter', () => {
     const p = createLlmProvider(c, 'everyday-azure-fixture-key', model)
     const reply = mode === 'code'
       ? '## LANG\nPython\n## ZH\n计算平均值。\n## EN\nComputes the average.\n## WHY\nCombines the values and divides by their count.\n## STEPS\n- Sum the values.\n- Divide by their count.\n## ISSUES\n- An empty list causes division by zero.'
-      : mode === 'refine' ? 'The engineer reverted the change.'
+      : mode === 'refine' || mode === 'summary' ? 'The engineer reverted the change.'
       : '## CODE\nno\n## ZH\n工程师撤销了改动。\n## EN\nThe engineer undid the change.'
     events[1] = { type: 'response.output_text.delta', delta: reply }
-    const parser = mode === 'refine' ? new RefinementParser() : new SectionParser()
+    const parser = mode === 'summary' ? new SummaryParser() : mode === 'refine' ? new RefinementParser() : new SectionParser()
     const raw = mode === 'code' ? 'def avg(xs):\n    return sum(xs) / len(xs)' : 'The engineer rolled back the change.'
     const request = { mode, text: raw, raw }
     for await (const delta of p.explain(request, new AbortController().signal)) parser.push(delta)
     const parsed = parser.end()
-    if (mode === 'refine') expect(parsed.refined).toBe(reply)
+    if (mode === 'summary') expect(parsed.summary).toBe(reply)
+    else if (mode === 'refine') expect(parsed.refined).toBe(reply)
     else { expect(parsed.zh).toBeTruthy(); expect(parsed.en).toBeTruthy() }
     if (mode === 'code') { expect(parsed.lang).toBe('Python'); expect(parsed.issues).toHaveLength(1) }
     expect(p.id).toBe('azure')
@@ -126,6 +128,12 @@ describe('Azure Responses adapter', () => {
     for await (const _delta of provider.explain(request, new AbortController().signal)) { /* drain */ }
     expect(calls).toHaveLength(1)
     expect(calls[0].body.max_output_tokens).toBe(outputBudget(request) + 2000)
+  })
+  it('keeps a long article summary on the short output budget with reasoning disabled', async () => {
+    const provider = new AzureResponsesProvider({ apiKey: 'fixture-key', baseUrl: endpoint, model: 'gpt-6-luna', reasoningEffort: 'none' })
+    const request: ExplainRequest = { mode: 'summary', text: 'Article', raw: 'x'.repeat(50000) }
+    for await (const _delta of provider.explain(request, new AbortController().signal)) { /* drain */ }
+    expect(calls[0].body.max_output_tokens).toBe(outputBudget(request))
   })
   it.each([undefined, 'low'] as const)('reserves reasoning tokens with effort %s', async reasoningEffort => {
     const provider = new AzureResponsesProvider({ apiKey: 'fixture-key', baseUrl: endpoint, model: 'gpt-6-luna', reasoningEffort })

@@ -9,6 +9,7 @@
 import type { Explanation, ExplainMode, ExplainRequest } from '../shared/types.js'
 import { wordCount } from './tokenize.js'
 import { REFINE_PROMPT } from './refine.js'
+import { SUMMARY_PROMPT } from './summary.js'
 
 /** Selections at or under this many words are treated as a term, not a passage. */
 const WORD_MODE_MAX_WORDS = 3
@@ -176,6 +177,7 @@ built-in functions · 内置函数 · sum、len 由解释器实现，比手写�
 Write (none) under ISSUES or CONCEPTS only when there is genuinely nothing to list.`
 
 export function systemPrompt(mode: ExplainMode): string {
+  if (mode === 'summary') return SUMMARY_PROMPT
   if (mode === 'refine') return REFINE_PROMPT
   if (mode === 'word') return WORD_PROMPT
   if (mode === 'code') return CODE_PROMPT
@@ -189,6 +191,9 @@ function fenced(text: string): string {
 
 export function userPrompt(req: ExplainRequest): string {
   const selection = req.raw ?? req.text
+  if (req.mode === 'summary') {
+    return `Summarize this selection briefly in its original language:\n\n${JSON.stringify(selection)}`
+  }
   if (req.mode === 'refine') {
     if (req.previousRefinement) {
       return `Create another refined version of the ORIGINAL selection in its original language.
@@ -255,6 +260,9 @@ const MAX_OUTPUT_TOKENS = 4096
 const MIN_OUTPUT_TOKENS = 1024
 
 export function outputBudget(req: ExplainRequest): number {
+  // Summary length stays small even for a full article. Leave enough headroom
+  // for Chinese and essential qualifications rather than cutting a sentence off.
+  if (req.mode === 'summary') return 1024
   // The raw selection is what the model is given, so it is what the answer scales to.
   const chars = (req.raw ?? req.text).length
   // Code answers carry sections a passage does not — steps, design notes, issues,

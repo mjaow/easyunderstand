@@ -43,7 +43,7 @@ beforeEach(() => {
   mocks.delayMs = 0
   mocks.providerConfigs = []; mocks.secretIds = []; mocks.providerKeys = []; mocks.providerModels = []
   mocks.config = {
-    hotkeys: { explain: 'Ctrl+Alt+E', refine: 'Ctrl+Alt+R' }, doubleClickTranscripts: false,
+    hotkeys: { explain: 'Ctrl+Alt+E', refine: 'Ctrl+Alt+R', summarize: 'Ctrl+Alt+S' }, doubleClickTranscripts: false,
     unverifiedPronunciations: false, launchAtLogin: false,
     tts: { provider: 'system', systemVoice: '', azureRegion: '', azureVoice: '', slowRate: -40, autoPlay: false },
     llm: { provider: 'openai', codeModel: '', videoModel: 'test-model', models: { openai: 'translation-model' }, baseUrls: { openai: 'https://example.test/v1' },
