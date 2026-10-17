@@ -21,7 +21,7 @@ const fixture = vi.hoisted(() => ({
 }))
 
 vi.mock('electron', () => ({
-  app: { getPath: () => '/unused' }, BrowserWindow: {}, screen: {}, clipboard: {}
+  app: { getPath: () => '/unused' }, BrowserWindow: { getAllWindows: () => [] }, screen: {}, clipboard: {}
 }))
 vi.mock('../src/main/capture.js', () => ({
   captureSelection: async () => ({
@@ -34,7 +34,8 @@ vi.mock('../src/main/capture.js', () => ({
 vi.mock('../src/main/coords.js', () => ({ dipToScreenRect: vi.fn(), screenToDip: vi.fn() }))
 vi.mock('../src/main/a11y.js', () => ({ readTranscriptAtPoint: vi.fn(), readCaptionFromVideo: vi.fn() }))
 vi.mock('../src/main/native/index.js', () => ({
-  IS_MACOS: true, copyChordLabel: () => '⌘C', foregroundWindowTitle: vi.fn(), inputPermission: vi.fn()
+  IS_MACOS: true, copyChordLabel: () => '⌘C', foregroundWindowTitle: vi.fn(), inputPermission: vi.fn(),
+  cursorPosition: () => ({ x: 300, y: 200 })
 }))
 vi.mock('../src/main/popup.js', () => ({
   showPopup: (v: ExplainState) => fixture.shown.push(structuredClone(v)),

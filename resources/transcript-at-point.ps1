@@ -1,6 +1,7 @@
 # Report what sits under a screen point, using UI Automation.
 #
 #   powershell.exe -NoProfile -ExecutionPolicy Bypass -File transcript-at-point.ps1 <x> <y>
+#   Add a third argument, link, to read only the nearest hyperlink's title.
 #
 # Prints, one per line:
 #   BUTTON:<name>   accessible name of the nearest button up the tree, if any
@@ -61,9 +62,60 @@ function Get-TextUnder($element) {
   return ($parts -join ' ')
 }
 
+# Prefer visible text over the accessible name: YouTube's aria-label can append
+# the channel, age and view count to a title. Bound the walk to this link alone.
+function Get-LinkTitle($element) {
+  $walker = [System.Windows.Automation.TreeWalker]::RawViewWalker
+  $pending = New-Object System.Collections.Stack
+  $pending.Push(@($element, 0))
+  $parts = New-Object 'System.Collections.Generic.List[string]'
+  $visited = 0
+  while ($pending.Count -gt 0 -and $visited -lt 80) {
+    $entry = $pending.Pop()
+    $node = $entry[0]
+    $depth = [int]$entry[1]
+    $visited++
+    $n = $node.Current
+    if ($n.IsOffscreen) { continue }
+    if ($n.ControlType -eq [System.Windows.Automation.ControlType]::Text -and $n.Name) {
+      $parts.Add($n.Name)
+      continue
+    }
+    if ($depth -ge 6) { continue }
+    # Reverse the children on the stack to keep the displayed reading order.
+    $children = New-Object System.Collections.Stack
+    $child = $walker.GetFirstChild($node)
+    while ($null -ne $child -and $children.Count -lt 80) {
+      $children.Push($child)
+      $child = $walker.GetNextSibling($child)
+    }
+    while ($children.Count -gt 0) { $pending.Push(@($children.Pop(), ($depth + 1))) }
+  }
+  if ($parts.Count -gt 0) { return ($parts -join ' ') }
+  return $element.Current.Name
+}
+
 try {
   $element = [System.Windows.Automation.AutomationElement]::FromPoint($point)
   if ($null -eq $element) { exit 0 }
+
+  if ($args[2] -eq 'link') {
+    $linkWalker = [System.Windows.Automation.TreeWalker]::RawViewWalker
+    $current = $element
+    for ($depth = 0; $null -ne $current -and $depth -lt 12; $depth++) {
+      $c = $current.Current
+      if ($c.ControlType -eq [System.Windows.Automation.ControlType]::Hyperlink) {
+        if (-not $c.IsOffscreen) { Out-Line 'LINK:' (Get-LinkTitle $current) }
+        break
+      }
+      # Never climb out of an editor or the current document to borrow a label.
+      if ($c.ControlType -in @([System.Windows.Automation.ControlType]::Edit,
+          [System.Windows.Automation.ControlType]::Document,
+          [System.Windows.Automation.ControlType]::Window)) { break }
+      $current = $linkWalker.GetParent($current)
+    }
+    exit 0
+  }
 
   $walker = [System.Windows.Automation.TreeWalker]::ControlViewWalker
   $buttonType = [System.Windows.Automation.ControlType]::Button

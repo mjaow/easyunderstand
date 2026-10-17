@@ -1,9 +1,8 @@
 /**
  * Global hotkey registration.
  *
- * Hotkeys are the entire input surface of this app — there is no click-to-translate,
- * no hover, no injected page UI. That's what keeps the user's selection and clipboard
- * untouched.
+ * Explain reads selected text or a hovered link title on demand, without injecting
+ * page UI. Capture preserves the user's selection and clipboard.
  */
 import { globalShortcut } from 'electron'
 import type { AppConfig } from '../shared/types.js'
@@ -198,7 +197,7 @@ export function bindingsFor(
       id: 'explain',
       accelerator: config.hotkeys.explain,
       handler: handlers.explain,
-      description: 'Explain selection'
+      description: 'Explain selection or hovered link'
     },
     {
       id: 'refine',

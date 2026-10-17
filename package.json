@@ -24,6 +24,7 @@
     "verify:capture": "electron-vite build && electron . --verify-capture",
     "verify:hotkeys": "electron-vite build && electron . --verify-hotkeys",
     "verify:click": "electron-vite build && electron . --verify-click",
+    "verify:links": "electron-vite build && electron . --verify-links",
     "verify:code": "electron-vite build && electron . --verify-code",
     "verify:refine": "electron-vite build && electron . --verify-refine",
     "verify:summary": "electron-vite build && electron . --verify-summary",

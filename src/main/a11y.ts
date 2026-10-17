@@ -1,8 +1,8 @@
 /**
  * Reading what sits under a screen point from the application's own accessibility
- * tree, to recognise a click on a transcript line.
+ * tree, to recognise a transcript click or read a hovered link title.
  *
- * Text comes only from captions or transcript lines exposed by the app itself.
+ * Text comes only from captions, transcript lines or link titles exposed by the app itself.
  * Video frames and images are never read as text.
  *
  * Two trees, one answer. Windows goes through UI Automation in a PowerShell script
@@ -15,7 +15,7 @@ import { existsSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import { normalize } from './capture.js'
-import { readPointMac } from './a11y-macos.js'
+import { readLinkAtPointMac, readPointMac } from './a11y-macos.js'
 import { parsePointRead, transcriptLineAt, type PointRead } from '../core/transcript.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -39,12 +39,17 @@ function scriptPath(): string {
 /** Everything the accessibility tree reports at a point. Null where it cannot be read. */
 export async function readPoint(x: number, y: number): Promise<PointRead | null> {
   if (process.platform === 'darwin') return readPointMac(x, y)
+  const stdout = await readWindowsPoint(x, y)
+  return stdout === null ? null : parsePointRead(stdout)
+}
+
+async function readWindowsPoint(x: number, y: number, mode = 'transcript'): Promise<string | null> {
   if (process.platform !== 'win32') return null
 
   const script = scriptPath()
   if (!existsSync(script)) return null
 
-  return new Promise<PointRead | null>((resolve) => {
+  return new Promise<string | null>((resolve) => {
     execFile(
       'powershell.exe',
       [
@@ -55,12 +60,26 @@ export async function readPoint(x: number, y: number): Promise<PointRead | null>
         '-File',
         script,
         String(Math.round(x)),
-        String(Math.round(y))
+        String(Math.round(y)),
+        mode
       ],
       { timeout: TIMEOUT_MS, encoding: 'utf8', maxBuffer: 1024 * 1024, windowsHide: true },
-      (err, stdout) => resolve(err ? null : parsePointRead(stdout ?? ''))
+      (err, stdout) => resolve(err ? null : stdout ?? '')
     )
   })
+}
+
+/** A link's displayed text, falling back to its accessible name when necessary. */
+export async function readLinkAtPoint(x: number, y: number): Promise<string | null> {
+  let title: string | null
+  if (process.platform === 'darwin') title = readLinkAtPointMac(x, y)
+  else {
+    const stdout = await readWindowsPoint(x, y, 'link')
+    title = stdout?.split(/\r?\n/).find(line => line.startsWith('LINK:'))?.slice(5) ?? null
+  }
+  // Titles are not transcripts: keep leading times, punctuation and non-Latin text.
+  const text = title?.replace(/\s+/g, ' ').trim()
+  return text && text.length <= 4096 ? text : null
 }
 
 export interface TranscriptRead {

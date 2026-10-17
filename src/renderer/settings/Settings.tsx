@@ -492,7 +492,7 @@ export function Settings(): React.ReactElement {
 
       <Card title="Hotkeys">
         <HotkeyRecorder
-          label="Explain selection"
+          label="Explain selection or hovered link"
           value={config.hotkeys.explain}
           onCommit={(v) => patch({ hotkeys: { ...config.hotkeys, explain: v } })}
         />

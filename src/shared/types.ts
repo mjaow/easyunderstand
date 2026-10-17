@@ -123,7 +123,9 @@ export interface ExplainState {
   raw?: string
   context?: string
   explanation: Explanation
-  status: 'streaming' | 'done' | 'error'
+  status: 'capturing' | 'streaming' | 'done' | 'error'
+  /** Shown immediately while the shortcut reads the source text. */
+  captureProgress?: string
   error?: string
   /**
    * Something is off, but there is still an answer worth reading — a translation cut
