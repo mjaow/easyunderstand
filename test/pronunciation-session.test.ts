@@ -15,14 +15,15 @@ const fixture = vi.hoisted(() => ({
   })
 }))
 
-vi.mock('electron', () => ({ app: { getPath: () => '/unused' }, BrowserWindow: {}, screen: {} }))
+vi.mock('electron', () => ({ app: { getPath: () => '/unused' }, BrowserWindow: { getAllWindows: () => [] }, screen: {} }))
 vi.mock('../src/main/capture.js', () => ({
   captureSelection: async () => ({ ok: true, text: fixture.text, raw: fixture.text, elapsedMs: 1 })
 }))
 vi.mock('../src/main/coords.js', () => ({ screenToDip: vi.fn() }))
 vi.mock('../src/main/a11y.js', () => ({ readTranscriptAtPoint: vi.fn() }))
 vi.mock('../src/main/native/index.js', () => ({
-  IS_MACOS: false, copyChordLabel: () => 'Ctrl+C', foregroundWindowTitle: vi.fn(), inputPermission: vi.fn()
+  IS_MACOS: false, copyChordLabel: () => 'Ctrl+C', foregroundWindowTitle: vi.fn(), inputPermission: vi.fn(),
+  cursorPosition: () => ({ x: 300, y: 200 })
 }))
 vi.mock('../src/main/popup.js', () => ({
   showPopup: (value: ExplainState) => fixture.shown.push(structuredClone(value)),

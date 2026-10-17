@@ -7,8 +7,8 @@ import { join } from 'node:path'
 import type { CaptureFailure, ExplainRequest, ExplainState } from '../shared/types.js'
 import { captureSelection } from './capture.js'
 import { screenToDip } from './coords.js'
-import { readTranscriptAtPoint } from './a11y.js'
-import { IS_MACOS, copyChordLabel, foregroundWindowTitle, inputPermission } from './native/index.js'
+import { readLinkAtPoint, readTranscriptAtPoint } from './a11y.js'
+import { IS_MACOS, copyChordLabel, cursorPosition, foregroundWindowTitle, inputPermission } from './native/index.js'
 import { showPopup, updatePopup, hidePopup, isPopupVisible } from './popup.js'
 import { detectMode, SectionParser, systemPrompt } from '../core/explain.js'
 import { RefinementParser } from '../core/refine.js'
@@ -67,6 +67,8 @@ function caches(): { explanations: JsonLruCache<Explanation> } {
 let inFlight: AbortController | null = null
 /** Repeated hotkeys must not borrow and restore the clipboard concurrently. */
 let capturingSelection = false
+/** Closing the loading popup must also cancel the pending capture's result. */
+let captureInFlight: AbortController | null = null
 /** What the popup is showing, so "explain this code" can ask again about it. */
 let lastRequest: ExplainRequest | null = null
 let lastRefinement: ExplainState | null = null
@@ -77,6 +79,7 @@ let popupAction: SelectionAction = 'explain'
 /** Also called when Escape or the close button hides the popup. */
 export function cancelInFlight(): void {
   cancelPronunciationPrefetch()
+  captureInFlight?.abort()
   inFlight?.abort()
   inFlight = null
 }
@@ -87,7 +90,7 @@ function emit(state: ExplainState, isNew: boolean): void {
   else updatePopup(state)
 }
 
-/** Hotkey handler: read the selection and explain it. */
+/** Hotkey handler: explain selected text, or the hovered link when nothing is selected. */
 export async function explainSelection(): Promise<void> {
   await processSelection('explain')
 }
@@ -108,11 +111,41 @@ async function processSelection(action: SelectionAction): Promise<void> {
   lastRefinement = null
 
   capturingSelection = true
+  const controller = new AbortController()
+  captureInFlight = controller
+  const pending: ExplainState = {
+    mode: action === 'summarize' ? 'summary' : action === 'refine' ? 'refine' : 'passage',
+    text: '', explanation: {}, status: 'capturing',
+    captureProgress: action === 'explain' ? 'Reading selection or link title…' : 'Reading selected text…'
+  }
   let result
   try {
+    // Save the hotkey's location before copy retries; the pointer may move while
+    // waiting. Do not translate our own popup or a different tab after a switch.
+    const point = action === 'explain' ? cursorPosition() : null
+    const hover = point && !isOverOwnWindow(screenToDip(point))
+      ? { ...point, windowTitle: foregroundWindowTitle() }
+      : null
+    // Acknowledge the shortcut before waiting for copy retries or accessibility.
+    // The popup is non-activating, so the source app still receives the copy.
+    emit(pending, true)
     result = await captureSelection()
+    if (controller.signal.aborted) return
+    if (!result.ok && (result.reason === 'no-response' || result.reason === 'empty') && hover &&
+        foregroundWindowTitle() === hover.windowTitle) {
+      emit({ ...pending, captureProgress: 'Reading link title…' }, false)
+      const title = await readLinkAtPoint(hover.x, hover.y).catch(() => null)
+      if (controller.signal.aborted) return
+      if (title && foregroundWindowTitle() === hover.windowTitle) {
+        result = { ok: true as const, text: title, raw: title, elapsedMs: result.elapsedMs }
+      }
+    }
+  } catch {
+    if (controller.signal.aborted) return
+    result = { ok: false as const, reason: 'unreadable' as const, elapsedMs: 0 }
   } finally {
     capturingSelection = false
+    if (captureInFlight === controller) captureInFlight = null
   }
   if (!result.ok) {
     emit({
@@ -120,13 +153,16 @@ async function processSelection(action: SelectionAction): Promise<void> {
       text: '',
       explanation: {},
       status: 'error',
-      error: permissionNote() + CAPTURE_MESSAGES[result.reason]
-    }, true)
+      error: permissionNote() + CAPTURE_MESSAGES[result.reason] +
+        (action === 'explain' ? ' You can also hover over a link title and press the Explain shortcut.' : '')
+    }, false)
     return
   }
 
   const mode = action === 'summarize' ? 'summary' : action === 'refine' ? 'refine' : detectMode(result.text)
-  await run({ mode, text: result.text, raw: result.raw }, true)
+  // Keep the acknowledged popup in place; updates must not reopen it or jump to
+  // wherever the pointer moved during capture.
+  await run({ mode, text: result.text, raw: result.raw }, false)
 }
 
 /**
@@ -410,6 +446,9 @@ export function toggleOrSummarize(): void {
 }
 
 function toggleSelection(action: SelectionAction): void {
+  // A retry press while reading is an acknowledgement, not a request to hide or
+  // borrow the clipboard twice. Escape and the close button still cancel it.
+  if (capturingSelection) return
   if (isPopupVisible() && popupAction === action) {
     cancelInFlight()
     hidePopup()

@@ -67,6 +67,7 @@ beforeEach(async () => {
       },
       copySelection,
       refineAgain,
+      close: vi.fn(),
       resize: vi.fn(),
       speak: vi.fn(async () => ({ error: 'Voice unavailable' }))
     }
@@ -84,6 +85,35 @@ afterEach(async () => {
   window.getSelection()?.removeAllRanges()
   vi.useRealTimers()
   vi.unstubAllGlobals()
+})
+
+describe('capture and translation progress in the rendered popup', () => {
+  it('shows reading progress and a working close button, then the source and incremental results', async () => {
+    await act(async () => update({ state: {
+      mode: 'passage', text: '', explanation: {}, status: 'capturing',
+      captureProgress: 'Reading selection or link title…'
+    } }))
+    expect(container.querySelector('[role="status"]')?.textContent).toContain('Reading selection or link title…')
+    expect(container.textContent).toContain('Press Esc to cancel')
+    expect(container.textContent).not.toContain(state.explanation.zh)
+    expect(container.querySelectorAll('button')).toHaveLength(1)
+    await act(async () => container.querySelector<HTMLButtonElement>('[title="Close (Esc)"]')!.click())
+    expect(window.easytranslate.close).toHaveBeenCalledTimes(1)
+
+    const source: ExplainState = {
+      mode: 'passage', text: 'A video title', explanation: {}, status: 'streaming', model: 'test-model'
+    }
+    await act(async () => update({ state: source }))
+    expect(container.textContent).toContain(source.text)
+    expect(container.textContent).toContain(source.model)
+    expect(container.querySelector('[role="status"]')?.textContent).toContain('Translating…')
+    await act(async () => update({ state: { ...source, explanation: { zh: '部分译文' } } }))
+    expect(container.textContent).toContain('部分译文')
+    expect(container.querySelector('[role="status"]')?.textContent).toContain('Translating…')
+    await act(async () => update({ state: { ...source, status: 'done', explanation: { zh: '完整译文' } } }))
+    expect(container.textContent).toContain('完整译文')
+    expect(container.querySelector('[role="status"]')).toBeNull()
+  })
 })
 
 describe('pronunciation labels in the rendered popup', () => {

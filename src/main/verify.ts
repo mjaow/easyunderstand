@@ -38,7 +38,7 @@ function log(pass: boolean, label: string, detail = ''): boolean {
  * The product never does this: in real use the user has already focused the app they
  * are reading, so the foreground window is correct by definition.
  */
-function forceForeground(win: BrowserWindow): void {
+export function forceForeground(win: BrowserWindow): void {
   if (foregroundIsOurs()) {
     win.focus()
     win.webContents.focus()

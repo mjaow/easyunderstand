@@ -66,6 +66,7 @@ const VERIFY_CAPTURE = process.argv.includes('--verify-capture')
 const PROBE_HOTKEYS = process.argv.includes('--probe-hotkeys')
 const VERIFY_HOTKEYS = process.argv.includes('--verify-hotkeys')
 const VERIFY_CLICK = process.argv.includes('--verify-click')
+const VERIFY_LINKS = process.argv.includes('--verify-links')
 const VERIFY_CODE = process.argv.includes('--verify-code')
 const VERIFY_REFINE = process.argv.includes('--verify-refine')
 const VERIFY_SUMMARY = process.argv.includes('--verify-summary')
@@ -86,6 +87,11 @@ if (VERIFY_CAPTURE) {
   void app.whenReady().then(async () => {
     const { runClickVerification } = await import('./verify-click.js')
     await runClickVerification()
+  })
+} else if (VERIFY_LINKS) {
+  void app.whenReady().then(async () => {
+    const { runLinkVerification } = await import('./verify-links.js')
+    await runLinkVerification(preloadPath())
   })
 } else if (VERIFY_CODE) {
   void app.whenReady().then(async () => {
@@ -340,7 +346,7 @@ function refreshTrayMenu(): void {
 
   tray.setContextMenu(
     Menu.buildFromTemplate([
-      { label: `Explain selection  (${config.hotkeys.explain})`, click: () => toggleOrExplain() },
+      { label: `Explain selection or hovered link  (${config.hotkeys.explain})`, click: () => toggleOrExplain() },
       { label: `Refine selection  (${config.hotkeys.refine})`, click: () => toggleOrRefine() },
       { label: `Summarize selection  (${config.hotkeys.summarize})`, click: () => toggleOrSummarize() },
       { type: 'separator' },

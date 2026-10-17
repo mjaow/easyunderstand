@@ -47,6 +47,21 @@ translation, and vocabulary together.*
 The selection popup does not take focus, and text capture restores your clipboard.
 See [How it works](#how-it-works) for the supported capture paths and their limits.
 
+### Translate a link title without selecting it
+
+Hover over a website link title or a YouTube video title and press **`Ctrl+Alt+E`**
+(**`⌘⌥E`** on macOS). The same popup translates and explains the title without
+opening the link. No browser extension is needed.
+
+The popup opens immediately to show that the shortcut was received. It reports
+when it is reading text, shows the captured title, and fills in the translation
+as it arrives. Press **Esc** to cancel; repeated shortcuts during text capture
+do not start another request.
+
+Selected text takes priority; clear any selection to use the hovered title. The
+page must expose the link's text or accessible name to the operating system.
+If a title cannot be read, select its text and use the shortcut as usual.
+
 ### Refine writing in the same language
 
 Select text in an **editable textbox** (a draft email, chat, or document) or
@@ -270,6 +285,7 @@ Settings opens by itself the first time, since nothing works until step 1 is don
 | Gesture | Result |
 |---|---|
 | Select text, press `Ctrl+Alt+E` (`⌘⌥E`) | Explain the selection |
+| Hover over a link title with no text selected, press `Ctrl+Alt+E` (`⌘⌥E`) | Translate and explain the title |
 | Select text, press `Ctrl+Alt+R` (`⌘⌥R`) | Refine writing in its original language |
 | Select text, press `Ctrl+Alt+S` (`⌘⌥S`) | Summarize briefly in its original language |
 | Double-click a YouTube caption exposed by the page | Explain the current caption |
@@ -511,6 +527,7 @@ no-op when Electron is healthy and on macOS, which has never shown the problem.
 ```bash
 npm test               # unit tests: parser, prompts, SSML escaping, CSP, transcript rules
 npm run verify:capture # end-to-end capture: reads the selection, restores the clipboard exactly
+npm run verify:links   # native link titles: nested text, YouTube-style labels, and display scaling
 npm run verify:hotkeys # clipboard shortcuts refused, conflicts fall back, availability check is honest
 npm run verify:click   # real OS double-clicks on a YouTube-shaped page come back as the right lines
 npm run verify:code    # asks the configured model: snippets come back as code, prose as prose
@@ -548,6 +565,8 @@ Notepad. macOS: Safari · Chrome · Preview · Notes · VS Code · Terminal.
             ↓
   press the hotkey                 global, Ctrl+Alt+E or ⌘⌥E
             ↓
+  open a non-activating popup      show reading progress immediately
+            ↓
   snapshot the clipboard           every format, as-is
   note the OS change counter
             ↓
@@ -556,12 +575,13 @@ Notepad. macOS: Safari · Chrome · Preview · Notes · VS Code · Terminal.
   poll the change counter          every 10ms, up to 700ms; one retry if nothing landed
             ↓
   read the copied text, restore your original clipboard
+  if nothing was copied, read the hovered link title through accessibility
             ↓
-  non-activating popup at the cursor, explanation streamed in
+  show the source and stream the explanation into the same popup
 ```
 
-Two operating systems, the same seven steps. Only the middle three are native, and
-each platform does them its own way:
+Both operating systems follow this flow, with platform-specific capture and
+window handling:
 
 | | Windows | macOS |
 |---|---|---|

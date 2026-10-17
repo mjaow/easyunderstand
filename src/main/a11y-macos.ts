@@ -137,3 +137,42 @@ export async function readPointMac(x: number, y: number): Promise<PointRead | nu
     for (const ref of owned) release(ref)
   }
 }
+
+/** Read only a hyperlink under the pointer, never a neighbouring heading or URL. */
+export function readLinkAtPointMac(x: number, y: number): string | null {
+  if (process.platform !== 'darwin' || !axAvailable() || !axTrusted()) return null
+  const leaf = elementAtPoint(x, y)
+  if (!leaf) return null
+  const owned: Ref[] = [leaf]
+  try {
+    let current: Ref = leaf
+    for (let depth = 0; current && depth < MAX_ANCESTORS; depth++) {
+      const role = attributeString(current, 'AXRole')
+      if (role === 'AXLink') {
+        let visited = 0
+        const visibleText = (element: Ref, level: number): string[] => {
+          if (++visited > 80 || level > 6) return []
+          const childRole = attributeString(element, 'AXRole')
+          if (childRole === 'AXStaticText') {
+            const text = attributeString(element, 'AXValue') || attributeString(element, 'AXTitle')
+            return text.trim() ? [text] : []
+          }
+          return mapAttributeElements(element, 'AXChildren', child => visibleText(child, level + 1), 80).flat()
+        }
+        // Visible text avoids metadata appended to a YouTube link's aria-label.
+        // Image-only links can still expose a useful title as their accessible name.
+        return visibleText(current, 0).join(' ').trim() || nodeText(readNode(current)) || null
+      }
+      if (['AXTextField', 'AXTextArea', 'AXComboBox', 'AXWebArea', 'AXWindow'].includes(role)) break
+      const parent = attributeElement(current, 'AXParent')
+      if (!parent) break
+      owned.push(parent)
+      current = parent
+    }
+    return null
+  } catch {
+    return null
+  } finally {
+    for (const ref of owned) release(ref)
+  }
+}

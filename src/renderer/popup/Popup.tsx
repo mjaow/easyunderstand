@@ -326,6 +326,12 @@ export function Popup(): React.ReactElement | null {
       ? state.text
       : `${state.text.slice(0, 90)}…`
   const empty = Object.keys(ex).length === 0
+  const capturing = state.status === 'capturing'
+  const progress = capturing ? state.captureProgress ?? 'Reading selected text…'
+    : state.status === 'streaming'
+      ? isRefine ? state.refineProgress ?? 'Refining…'
+        : isSummary ? 'Summarizing…' : isCode ? 'Explaining code…' : 'Translating…'
+      : null
   // Matched on the display term, so the renderer never needs the 126k-entry wordlist.
   const unverifiedIpa = new Set(ex.unverifiedIpa ?? [])
   const systemDictionaryIpa = new Set(ex.systemDictionaryIpa ?? [])
@@ -396,8 +402,8 @@ export function Popup(): React.ReactElement | null {
 
           <div className="flex shrink-0 items-center">
             {/* Code is not read aloud; the English explanation below has its own button. */}
-            {!isCode && !isRefine && !isSummary && <SpeakButton text={state.text} onStatus={setStatus} />}
-            {!isCode && !isRefine && !isSummary && <SpeakButton text={state.text} slow onStatus={setStatus} />}
+            {!capturing && state.text && !isCode && !isRefine && !isSummary && <SpeakButton text={state.text} onStatus={setStatus} />}
+            {!capturing && state.text && !isCode && !isRefine && !isSummary && <SpeakButton text={state.text} slow onStatus={setStatus} />}
             <button
               onClick={() => window.easytranslate.close()}
               title="Close (Esc)"
@@ -412,6 +418,17 @@ export function Popup(): React.ReactElement | null {
         {/* ------------------------------------------------------------ body */}
         {/* Selectable, and selecting is what copies — see useCopyOnSelect above. */}
         <div className="et-selectable space-y-2.5 px-3 py-2.5">
+          {progress && (
+            <div role="status" aria-live="polite" className="flex items-center gap-2 text-[12px]" style={{ color: 'var(--text-muted)' }}>
+              <span aria-hidden="true" className="et-pulse">●</span>
+              <span>{progress}</span>
+            </div>
+          )}
+          {capturing && (
+            <div className="text-[11px]" style={{ color: 'var(--text-subtle)' }}>
+              Results will appear here as they arrive. Press Esc to cancel.
+            </div>
+          )}
           {state.status === 'error' ? (
             <div className="text-[13px] leading-snug" style={{ color: 'var(--danger)' }}>
               {state.error}
@@ -420,7 +437,7 @@ export function Popup(): React.ReactElement | null {
             <>
               {empty && state.status === 'streaming' && <Skeleton />}
 
-              {isRefine && (
+              {isRefine && !capturing && (
                 <Section label="refined text">
                   {ex.refined && <div style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{ex.refined}</div>}
                 </Section>
@@ -611,12 +628,6 @@ export function Popup(): React.ReactElement | null {
           {state.refineRetryError && (
             <div role="alert" className="text-[12px]" style={{ color: 'var(--danger)' }}>
               Couldn’t create another version. {state.refineRetryError} Your previous version is still shown.
-            </div>
-          )}
-
-          {isRefine && state.status === 'streaming' && state.refineProgress && (
-            <div role="status" className="text-[12px]" style={{ color: 'var(--text-muted)' }}>
-              {state.refineProgress}
             </div>
           )}
 
